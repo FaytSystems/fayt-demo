@@ -1,0 +1,47 @@
+# D:\CryptoTrader\fayt-demo-dashboard\scripts\print-cloudflare-pages-settings.ps1
+
+$ErrorActionPreference = "Stop"
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host " FaytSystems Cloudflare Pages Settings"
+Write-Host "============================================================"
+Write-Host ""
+
+Write-Host "PROJECT SETTINGS"
+Write-Host "Project name:           fayt-demo"
+Write-Host "Production branch:      main"
+Write-Host "Root directory:         fayt-demo-dashboard"
+Write-Host "Build command:          npm run build"
+Write-Host "Build output directory: dist"
+Write-Host "Node.js version:        20"
+Write-Host ""
+
+Write-Host "PRODUCTION ENVIRONMENT VARIABLES"
+Write-Host "Variable 1:"
+Write-Host "  Name:  VITE_APP_TITLE"
+Write-Host "  Value: Fayt Systems Demo"
+Write-Host ""
+Write-Host "Variable 2:"
+Write-Host "  Name:  VITE_DEMO_API_BASE"
+Write-Host "  Value: https://demo-api.faytsystems.com"
+Write-Host ""
+Write-Host "Variable 3:"
+Write-Host "  Name:  VITE_DEMO_WS_BASE"
+Write-Host "  Value: wss://demo-api.faytsystems.com"
+Write-Host ""
+
+Write-Host "CUSTOM DOMAIN"
+Write-Host "demo.faytsystems.com"
+Write-Host ""
+
+Write-Host "BACKEND API DOMAIN"
+Write-Host "demo-api.faytsystems.com"
+Write-Host "Tunnel target: http://127.0.0.1:8111"
+Write-Host ""
+
+Write-Host "DO NOT ADD SECRETS TO CLOUDFLARE PAGES VARIABLES"
+Write-Host "No broker keys, no Stripe secrets, no database paths, no JWT secrets."
+Write-Host ""
+Write-Host "============================================================"
+Write-Host ""

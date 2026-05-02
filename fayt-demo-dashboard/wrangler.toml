@@ -1,0 +1,13 @@
+# D:\CryptoTrader\fayt-demo-dashboard\wrangler.toml
+
+name = "fayt-demo"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-05-02"
+
+# Static Cloudflare Pages frontend for the public read-only demo.
+# These are public browser build variables, not secrets.
+
+[vars]
+VITE_APP_TITLE = "Fayt Systems Demo"
+VITE_DEMO_API_BASE = "https://demo-api.faytsystems.com"
+VITE_DEMO_WS_BASE = "wss://demo-api.faytsystems.com"

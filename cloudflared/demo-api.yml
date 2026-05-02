@@ -1,0 +1,26 @@
+# D:\CryptoTrader\cloudflared\demo-api.yml
+
+# FaytSystems public demo API tunnel.
+#
+# Setup:
+#   cloudflared tunnel login
+#   cloudflared tunnel create fayt-demo-api
+#   cloudflared tunnel route dns fayt-demo-api demo-api.faytsystems.com
+#
+# Replace tunnel and credentials-file below with your generated values.
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: C:\Users\REPLACE_ME\.cloudflared\REPLACE_WITH_TUNNEL_UUID.json
+
+originRequest:
+  connectTimeout: 30s
+  tcpKeepAlive: 30s
+  keepAliveConnections: 100
+  keepAliveTimeout: 90s
+  httpHostHeader: demo-api.faytsystems.com
+
+ingress:
+  - hostname: demo-api.faytsystems.com
+    service: http://127.0.0.1:8111
+
+  - service: http_status:404

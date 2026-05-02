@@ -1,0 +1,70 @@
+# D:\CryptoTrader\.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local databases and backups
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.bak
+*.backup_*
+*.tmp
+
+# Data folders
+data/**
+!data/.gitkeep
+
+# Cloudflare tunnel credentials
+cloudflared/*.json
+
+# Key material
+config/*.key
+config/*.pem
+secrets/
+*.pem
+*.key
+
+# Logs
+logs/
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Runtime backups
+runner_24x7.py.backup_*
+runner_24x7.py.bak_*
+price_location_gate.py.backup_*
