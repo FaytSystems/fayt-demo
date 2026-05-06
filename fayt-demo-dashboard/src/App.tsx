@@ -1,953 +1,779 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
+import type {
+  DashboardBundle,
+  DemoEvent,
+  DemoTrade,
+  MarketBoardSymbol,
+  MarketCandle,
+  MarketTradeMarker,
+} from "./client";
+import { fetchDashboardBundle } from "./client";
 
-type AnyRecord = Record<string, unknown>;
-
-type Trade = {
-  id?: string | number;
-  symbol?: string;
-  side?: string;
-  qty?: number;
-  entry_price?: number;
-  current_price?: number;
-  exit_price?: number;
-  realized_pnl?: number;
-  unrealized_pnl?: number;
-  opened_at?: string;
-  closed_at?: string;
-  status?: string;
-  stop_loss?: number;
-  notional_dollars?: number;
-  notional_pct?: number;
-  risk_pct?: number;
-  bucket_key?: string;
-};
-
-type EquityRow = {
-  ts?: string;
-  time?: string;
-  created_at?: string;
-  equity?: number;
-  total_equity?: number;
-  balance?: number;
-  value?: number;
-};
-
-type DemoEvent = {
-  id?: string | number;
-  ts?: string;
-  created_at?: string;
-  event_type?: string;
-  type?: string;
-  symbol?: string;
-  message?: string;
-  reason?: string;
-};
-
-type DashboardData = {
-  status: AnyRecord | null;
-  openTrades: Trade[];
-  closedTrades: Trade[];
-  equityRows: EquityRow[];
-  events: DemoEvent[];
-  loading: boolean;
-  error: string | null;
-};
-
-const API_BASE = String(
-  import.meta.env.VITE_DEMO_API_BASE || "http://127.0.0.1:8111",
-).replace(/\/$/, "");
-
-const MAX_OPEN_PAPER_TRADES = 5;
-const TRACKED_SYMBOL_TARGET = 25;
-const STARTING_EQUITY = 30000;
-
-const RISK_CHECKPOINT = {
-  currentOpenTradeRiskPct: 0.0273,
-  notionalPerTradePct: 1.25,
-  fiveTradeTotalStopRiskPct: 0.1365,
-};
-
-const PUBLIC_WORDING =
-  "Live Coinbase Advanced market data with simulated paper execution.";
-
-const MODE_WORDING =
-  "Temporary paper activity mode is enabled for non-certified current-bucket testing.";
-
-function unwrapArray<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) return payload as T[];
-
-  if (payload && typeof payload === "object") {
-    const obj = payload as AnyRecord;
-    const keys = [
-      "data",
-      "items",
-      "rows",
-      "trades",
-      "open_trades",
-      "closed_trades",
-      "equity",
-      "events",
-      "points",
-      "results",
-    ];
-
-    for (const key of keys) {
-      const value = obj[key];
-      if (Array.isArray(value)) return value as T[];
-    }
-  }
-
-  return [];
-}
-
-function unwrapObject(payload: unknown): AnyRecord | null {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-
-  const obj = payload as AnyRecord;
-
-  if (obj.status && typeof obj.status === "object" && !Array.isArray(obj.status)) {
-    return obj.status as AnyRecord;
-  }
-
-  return obj;
-}
-
-async function fetchJson(path: string, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`${path} returned ${response.status}`);
-  }
-
-  return response.json();
-}
-
-function asNumber(value: unknown, fallback = 0): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const clean = value.replace(/[$,%\s,]/g, "");
-    const parsed = Number(clean);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
-}
-
-function firstNumber(source: AnyRecord | null | undefined, keys: string[], fallback = 0): number {
-  if (!source) return fallback;
-
-  for (const key of keys) {
-    if (source[key] !== undefined && source[key] !== null) {
-      return asNumber(source[key], fallback);
-    }
-  }
-
-  return fallback;
-}
+const DISPLAY_STARTING_BALANCE = 1000;
+const POLL_MS = 2500;
+const SLIPPAGE_BPS = 8;
+const FEES_BPS = 12;
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: Math.abs(value) >= 1000 ? 0 : 2,
-  }).format(value);
-}
-
-function formatCurrencyPrecise(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+  return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
-  }).format(value);
+  });
 }
 
-function formatPercentAuto(value: number, digits = 2): string {
-  const normalized = Math.abs(value) <= 1 ? value * 100 : value;
-
-  return `${normalized.toFixed(digits)}%`;
+function formatCompactCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(value);
+  return value.toLocaleString("en-US");
 }
 
-function cleanSymbol(symbol?: string): string {
-  if (!symbol) return "—";
-  return symbol.replace("/", "-");
+function formatPct(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function cleanSide(side?: string): string {
-  if (!side) return "—";
-  return side.toUpperCase();
+function formatSignedCurrency(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${formatCurrency(Math.abs(value))}`;
 }
 
-function getTradeEntryPrice(trade: Trade): number {
-  return asNumber(trade.entry_price, asNumber(trade.current_price, 0));
+function sideLabel(side?: string | null): "LONG" | "SHORT" {
+  const normalized = String(side || "").toLowerCase();
+  return normalized.includes("sell") || normalized.includes("short") ? "SHORT" : "LONG";
 }
 
-function isOpenTrade(trade: Trade): boolean {
-  const status = String(trade.status || "").toLowerCase();
-  return status === "open" || !status;
+function estimatePnlAfterCosts(trade: DemoTrade): number {
+  const direction = sideLabel(trade.side) === "SHORT" ? -1 : 1;
+  const current = Number(trade.current_price ?? trade.entry_price ?? 0);
+  const entry = Number(trade.entry_price ?? 0);
+  const qty = Number(trade.qty ?? 0);
+  const gross = direction * (current - entry) * qty;
+  const entryNotional = entry * qty;
+  const exitNotional = current * qty;
+  const totalCostRate = (SLIPPAGE_BPS + FEES_BPS) / 10000;
+  const estimatedCosts = (entryNotional + exitNotional) * totalCostRate;
+  return gross - estimatedCosts;
 }
 
-function buildSyntheticEquitySeries(currentEquity: number): number[] {
-  const safeCurrent = currentEquity > 0 ? currentEquity : STARTING_EQUITY;
-  const start = STARTING_EQUITY;
-  const points = 34;
+function useDirectionalFlash(
+  value: number,
+  classes: { up?: string; down?: string }
+): string {
+  const prevRef = useRef<number | null>(null);
+  const [flash, setFlash] = useState("");
 
-  return Array.from({ length: points }, (_, index) => {
-    const progress = index / (points - 1);
-    const trend = start + (safeCurrent - start) * progress;
-    const wave = Math.sin(index * 0.72) * 85 + Math.cos(index * 0.31) * 55;
-    return Math.max(0, trend + wave);
-  });
-}
-
-function getEquitySeries(rows: EquityRow[], currentEquity: number): number[] {
-  const fromRows = rows
-    .map((row) =>
-      asNumber(
-        row.equity,
-        asNumber(row.total_equity, asNumber(row.balance, asNumber(row.value, NaN))),
-      ),
-    )
-    .filter((value) => Number.isFinite(value) && value > 0);
-
-  if (fromRows.length >= 2) return fromRows.slice(-80);
-
-  return buildSyntheticEquitySeries(currentEquity);
-}
-
-function getMonthlyBars(): number[] {
-  return [1.8, -1.1, -4.9, 0.8, 6.2, -1.9, 9.4, -5.7, 1.1, -6.8, -0.6, 1.4];
-}
-
-function buildTopSymbols(closedTrades: Trade[], openTrades: Trade[]) {
-  const totals = new Map<string, { pnl: number; count: number; last: number }>();
-
-  for (const trade of closedTrades) {
-    const symbol = cleanSymbol(trade.symbol);
-    if (symbol === "—") continue;
-
-    const existing = totals.get(symbol) || { pnl: 0, count: 0, last: 0 };
-    existing.pnl += asNumber(trade.realized_pnl, 0);
-    existing.count += 1;
-    existing.last = asNumber(trade.exit_price, asNumber(trade.current_price, existing.last));
-    totals.set(symbol, existing);
-  }
-
-  for (const trade of openTrades) {
-    const symbol = cleanSymbol(trade.symbol);
-    if (symbol === "—") continue;
-
-    if (!totals.has(symbol)) {
-      totals.set(symbol, {
-        pnl: asNumber(trade.unrealized_pnl, 0),
-        count: 1,
-        last: asNumber(trade.current_price, asNumber(trade.entry_price, 0)),
-      });
+  useEffect(() => {
+    if (prevRef.current === null) {
+      prevRef.current = value;
+      return;
     }
-  }
 
-  const rows = Array.from(totals.entries())
-    .sort((a, b) => b[1].pnl - a[1].pnl)
-    .slice(0, 4)
-    .map(([symbol, row]) => ({
-      symbol,
-      pnl: row.pnl,
-      count: row.count,
-      last: row.last,
-    }));
+    let next = "";
+    if (value > prevRef.current && classes.up) {
+      next = classes.up;
+    } else if (value < prevRef.current && classes.down) {
+      next = classes.down;
+    }
 
-  if (rows.length > 0) return rows;
+    prevRef.current = value;
 
-  return [
-    { symbol: "BTC-USD", pnl: 0, count: 0, last: 0 },
-    { symbol: "ETH-USD", pnl: 0, count: 0, last: 0 },
-    { symbol: "SOL-USD", pnl: 0, count: 0, last: 0 },
-  ];
+    if (!next) return;
+
+    setFlash(next);
+    const timeout = window.setTimeout(() => setFlash(""), 1700);
+    return () => window.clearTimeout(timeout);
+  }, [value, classes.down, classes.up]);
+
+  return flash;
 }
 
-function Sparkline({ values }: { values: number[] }) {
-  const width = 132;
-  const height = 42;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
+function useClock(): string {
+  const [time, setTime] = useState(
+    new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  );
 
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1 || 1)) * width;
-      const y = height - ((value - min) / range) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setTime(
+        new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return time;
+}
+
+function StatCard(props: {
+  title: string;
+  value: string;
+  subValue?: string;
+  tone?: "default" | "positive" | "negative" | "gold";
+  flashClass?: string;
+  footnote?: string;
+}) {
+  const { title, value, subValue, tone = "default", flashClass = "", footnote } = props;
 
   return (
-    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="trend">
-      <polyline points={points} />
-    </svg>
+    <div className={`panel stat-card tone-${tone}`}>
+      <div className="panel-title">{title}</div>
+      <div className={`stat-value ${flashClass}`}>{value}</div>
+      {subValue ? <div className="stat-subvalue">{subValue}</div> : null}
+      {footnote ? <div className="stat-footnote">{footnote}</div> : null}
+    </div>
   );
 }
 
-function EquityChart({ values }: { values: number[] }) {
-  const width = 880;
-  const height = 310;
-  const paddingX = 28;
-  const paddingY = 24;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
-
-  const points = values
-    .map((value, index) => {
-      const x = paddingX + (index / (values.length - 1 || 1)) * (width - paddingX * 2);
-      const y = height - paddingY - ((value - min) / range) * (height - paddingY * 2);
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-
-  const comparison = values
-    .map((value, index) => {
-      const drift = min + (max - min) * (index / (values.length - 1 || 1)) * 0.76;
-      const blended = drift + value * 0.06;
-      const x = paddingX + (index / (values.length - 1 || 1)) * (width - paddingX * 2);
-      const y = height - paddingY - ((blended - min) / range) * (height - paddingY * 2);
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-
+function TickerStrip({ items }: { items: MarketBoardSymbol[] }) {
   return (
-    <svg className="equity-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="paper equity curve">
-      <defs>
-        <linearGradient id="equityGlow" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="rgba(84, 160, 255, 0.36)" />
-          <stop offset="100%" stopColor="rgba(84, 160, 255, 0)" />
-        </linearGradient>
-      </defs>
-
-      {[0, 1, 2, 3].map((line) => {
-        const y = paddingY + line * ((height - paddingY * 2) / 3);
-        return <line key={line} className="chart-grid" x1={paddingX} x2={width - paddingX} y1={y} y2={y} />;
-      })}
-
-      {[0, 1, 2, 3, 4].map((line) => {
-        const x = paddingX + line * ((width - paddingX * 2) / 4);
-        return <line key={line} className="chart-grid vertical" y1={paddingY} y2={height - paddingY} x1={x} x2={x} />;
-      })}
-
-      <polyline className="comparison-line" points={comparison} />
-      <polyline className="equity-line" points={points} />
-    </svg>
-  );
-}
-
-function MonthlyBars() {
-  const values = getMonthlyBars();
-  const maxAbs = Math.max(...values.map((value) => Math.abs(value))) || 1;
-
-  return (
-    <div className="monthly-bars">
-      {values.map((value, index) => (
-        <div className="bar-column" key={`${value}-${index}`}>
-          <div
-            className={`bar ${value >= 0 ? "positive" : "negative"}`}
-            style={{
-              height: `${Math.max(8, (Math.abs(value) / maxAbs) * 72)}px`,
-              transform: value < 0 ? "translateY(0)" : "translateY(0)",
-            }}
-            title={`${value.toFixed(1)}%`}
-          />
+    <div className="ticker-strip panel">
+      {items.map((item) => (
+        <div key={item.symbol} className="ticker-chip">
+          <div className="ticker-symbol">{item.symbol}</div>
+          <div className="ticker-price">{formatCompactCurrency(item.last_price)}</div>
+          <div className={`ticker-change ${item.pct_change >= 0 ? "positive" : "negative"}`}>
+            {formatPct(item.pct_change)}
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-function MetricCard({
-  eyebrow,
-  value,
-  caption,
-  tone = "neutral",
-  children,
-}: {
-  eyebrow: string;
-  value: string;
-  caption: string;
-  tone?: "neutral" | "green" | "blue" | "gold";
-  children?: React.ReactNode;
-}) {
+function ChartLegend() {
   return (
-    <section className={`metric-card ${tone}`}>
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h3>{value}</h3>
-        <p>{caption}</p>
-      </div>
-      <div className="metric-art">{children}</div>
-    </section>
-  );
-}
-
-function StatusDot({ active }: { active: boolean }) {
-  return <span className={`status-dot ${active ? "active" : "inactive"}`} />;
-}
-
-function RiskRow({
-  icon,
-  label,
-  detail,
-  value,
-}: {
-  icon: string;
-  label: string;
-  detail: string;
-  value: string;
-}) {
-  return (
-    <div className="risk-row">
-      <div className="risk-icon">{icon}</div>
-      <div>
-        <strong>{label}</strong>
-        <span>{detail}</span>
-      </div>
-      <b>{value}</b>
+    <div className="chart-legend">
+      <span><i className="legend-dot long"></i> Long Entry</span>
+      <span><i className="legend-dot short"></i> Short Entry</span>
+      <span><i className="legend-dot exit"></i> Exit</span>
     </div>
   );
 }
 
-function App() {
-  const [data, setData] = useState<DashboardData>({
-    status: null,
-    openTrades: [],
-    closedTrades: [],
-    equityRows: [],
-    events: [],
-    loading: true,
-    error: null,
+function locateMarkerIndex(candles: MarketCandle[], ts: string): number {
+  if (!candles.length || !ts) return -1;
+  const target = new Date(ts).getTime();
+
+  let bestIndex = 0;
+  let smallestDiff = Number.POSITIVE_INFINITY;
+
+  candles.forEach((candle, index) => {
+    const diff = Math.abs(new Date(candle.ts).getTime() - target);
+    if (diff < smallestDiff) {
+      smallestDiff = diff;
+      bestIndex = index;
+    }
   });
 
-  useEffect(() => {
-    let mounted = true;
-    const controller = new AbortController();
+  return bestIndex;
+}
 
-    async function loadDashboard() {
-      try {
-        const [statusPayload, openPayload, closedPayload, equityPayload, eventsPayload] =
-          await Promise.all([
-            fetchJson("/demo/status", controller.signal),
-            fetchJson("/demo/open-trades", controller.signal).catch(() => []),
-            fetchJson("/demo/closed-trades", controller.signal).catch(() => []),
-            fetchJson("/demo/equity", controller.signal).catch(() => []),
-            fetchJson("/demo/events", controller.signal).catch(() => []),
-          ]);
+function CandleChart({
+  symbolData,
+  selectedSymbol,
+}: {
+  symbolData?: MarketBoardSymbol;
+  selectedSymbol: string;
+}) {
+  const width = 980;
+  const height = 380;
+  const paddingX = 22;
+  const paddingTop = 18;
+  const paddingBottom = 36;
+  const chartHeight = height - paddingTop - paddingBottom;
+  const chartWidth = width - paddingX * 2;
 
-        if (!mounted) return;
+  const candles = symbolData?.candles ?? [];
+  const markers = symbolData?.markers ?? [];
 
-        setData({
-          status: unwrapObject(statusPayload),
-          openTrades: unwrapArray<Trade>(openPayload),
-          closedTrades: unwrapArray<Trade>(closedPayload),
-          equityRows: unwrapArray<EquityRow>(equityPayload),
-          events: unwrapArray<DemoEvent>(eventsPayload),
-          loading: false,
-          error: null,
-        });
-      } catch (error) {
-        if (!mounted) return;
-
-        setData((previous) => ({
-          ...previous,
-          loading: false,
-          error: error instanceof Error ? error.message : "Unable to load demo API.",
-        }));
-      }
-    }
-
-    loadDashboard();
-    const intervalId = window.setInterval(loadDashboard, 10000);
-
-    return () => {
-      mounted = false;
-      controller.abort();
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  const summary = useMemo(() => {
-    const status = data.status;
-    const openCount = firstNumber(
-      status,
-      ["open_count", "open_trades", "open_trades_count", "openTradeCount"],
-      data.openTrades.length,
+  if (!candles.length) {
+    return (
+      <div className="chart-empty">
+        <div className="chart-empty-title">No market candles available</div>
+        <div className="chart-empty-subtitle">
+          Waiting for live DB bars for <strong>{selectedSymbol}</strong>.
+        </div>
+      </div>
     );
+  }
 
-    const closedCount = firstNumber(
-      status,
-      ["closed_count", "closed_trades", "closed_trades_count", "closedTradeCount"],
-      data.closedTrades.length,
-    );
+  const highs = candles.map((c) => c.high);
+  const lows = candles.map((c) => c.low);
+  const maxPrice = Math.max(...highs);
+  const minPrice = Math.min(...lows);
+  const priceRange = Math.max(maxPrice - minPrice, 0.000001);
+  const xStep = chartWidth / Math.max(candles.length - 1, 1);
+  const bodyWidth = Math.max(6, Math.min(12, xStep * 0.66));
 
-    const realizedPnl = firstNumber(
-      status,
-      ["realized_pnl", "realizedPnl", "realized", "total_realized_pnl"],
-      data.closedTrades.reduce((sum, trade) => sum + asNumber(trade.realized_pnl, 0), 0),
-    );
+  const yFromPrice = (price: number) =>
+    paddingTop + (maxPrice - price) / priceRange * chartHeight;
 
-    const unrealizedPnl = firstNumber(
-      status,
-      ["unrealized_pnl", "unrealizedPnl", "unrealized"],
-      data.openTrades.reduce((sum, trade) => sum + asNumber(trade.unrealized_pnl, 0), 0),
-    );
+  const closePath = candles
+    .map((candle, index) => {
+      const x = paddingX + xStep * index;
+      const y = yFromPrice(candle.close);
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
 
-    const totalEquity = firstNumber(
-      status,
-      ["total_equity", "equity", "account_equity", "paper_equity"],
-      STARTING_EQUITY + realizedPnl + unrealizedPnl,
-    );
-
-    const winners = data.closedTrades.filter((trade) => asNumber(trade.realized_pnl, 0) > 0).length;
-    const computedWinRate = data.closedTrades.length > 0 ? (winners / data.closedTrades.length) * 100 : 0;
-
-    const winRate = firstNumber(
-      status,
-      ["win_rate", "winRate", "closed_win_rate"],
-      computedWinRate,
-    );
-
-    const dbExists = Boolean(status?.db_exists ?? status?.ok ?? !data.error);
-    const mode = String(status?.mode || "paper");
-    const brokerName = String(status?.broker_name || "paper_sim");
-    const returnPct = totalEquity > 0 ? ((totalEquity - STARTING_EQUITY) / STARTING_EQUITY) * 100 : 0;
-    const equitySeries = getEquitySeries(data.equityRows, totalEquity);
-
-    return {
-      openCount,
-      closedCount,
-      realizedPnl,
-      unrealizedPnl,
-      totalEquity,
-      winRate,
-      dbExists,
-      mode,
-      brokerName,
-      returnPct,
-      equitySeries,
-    };
-  }, [data]);
-
-  const recentTrades = useMemo(() => {
-    return [...data.openTrades, ...data.closedTrades].slice(0, 6);
-  }, [data.openTrades, data.closedTrades]);
-
-  const topSymbols = useMemo(() => {
-    return buildTopSymbols(data.closedTrades, data.openTrades);
-  }, [data.closedTrades, data.openTrades]);
-
-  const lastEvent = data.events[0];
+  const gridLines = 5;
+  const priceLabels = Array.from({ length: gridLines + 1 }).map((_, i) => {
+    const ratio = i / gridLines;
+    const price = maxPrice - ratio * priceRange;
+    const y = paddingTop + ratio * chartHeight;
+    return { price, y };
+  });
 
   return (
-    <main className="boardroom-app">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
+    <div className="chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" role="img" aria-label={`${selectedSymbol} live chart`}>
+        <defs>
+          <linearGradient id="chartBg" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(19, 45, 92, 0.32)" />
+            <stop offset="100%" stopColor="rgba(5, 13, 28, 0.05)" />
+          </linearGradient>
 
-      <header className="topbar">
-        <a className="brand" href="/">
-          FAYT <span>SYSTEMS</span>
-        </a>
+          <linearGradient id="lineGlow" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#55d9ff" />
+            <stop offset="50%" stopColor="#3c9dff" />
+            <stop offset="100%" stopColor="#a36eff" />
+          </linearGradient>
 
-        <nav className="nav-links" aria-label="Primary navigation">
-          <a href="#overview" className="active">Overview</a>
-          <a href="#live-demo">Live Demo</a>
-          <a href="#performance">Performance</a>
-          <a href="#risk">Risk</a>
-          <a href="#technology">Technology</a>
-          <a href="#contact">Contact</a>
-        </nav>
+          <filter id="lineShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2.2" result="blur" />
+            <feColorMatrix
+              in="blur"
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 12 -5"
+            />
+          </filter>
 
-        <a className="launch-button" href="#live-demo">
-          Launch Live Demo <span>→</span>
-        </a>
-      </header>
+          <filter id="candleGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="1.3" />
+          </filter>
+        </defs>
 
-      <section className="hero-shell" id="overview">
-        <div className="world-map" />
+        <rect x="0" y="0" width={width} height={height} fill="url(#chartBg)" rx="18" />
 
-        <div className="hero-copy">
-          <p className="section-kicker">Public read-only paper demo</p>
-          <h1>{PUBLIC_WORDING}</h1>
-          <p className="hero-subtitle">
-            Institutional-grade market data. Sophisticated execution logic.
-            Transparent performance. Built for disciplined decision-making.
-          </p>
+        {priceLabels.map((label) => (
+          <g key={`${label.y}`}>
+            <line
+              x1={paddingX}
+              y1={label.y}
+              x2={width - paddingX}
+              y2={label.y}
+              className="chart-gridline"
+            />
+            <text x={width - 6} y={label.y - 4} className="chart-axis-label" textAnchor="end">
+              {label.price.toFixed(2)}
+            </text>
+          </g>
+        ))}
 
-          <div className="mode-banner">
-            <span className="shield">◇</span>
-            <span>{MODE_WORDING}</span>
-          </div>
+        {candles.map((candle, index) => {
+          const x = paddingX + xStep * index;
+          const yOpen = yFromPrice(candle.open);
+          const yClose = yFromPrice(candle.close);
+          const yHigh = yFromPrice(candle.high);
+          const yLow = yFromPrice(candle.low);
+          const isUp = candle.close >= candle.open;
+          const top = Math.min(yOpen, yClose);
+          const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
 
-          <div className="hero-status-grid">
-            <div>
-              <span>Public demo/API</span>
-              <strong>Live</strong>
-            </div>
-            <div>
-              <span>Execution</span>
-              <strong>paper_sim only</strong>
-            </div>
-            <div>
-              <span>Real Coinbase orders</span>
-              <strong>Disabled</strong>
-            </div>
-          </div>
-        </div>
+          return (
+            <g key={`${candle.ts}-${index}`}>
+              <line
+                x1={x}
+                y1={yHigh}
+                x2={x}
+                y2={yLow}
+                className={`chart-wick ${isUp ? "wick-up" : "wick-down"}`}
+              />
+              <rect
+                x={x - bodyWidth / 2}
+                y={top}
+                width={bodyWidth}
+                height={bodyHeight}
+                rx="2"
+                className={`chart-body ${isUp ? "body-up" : "body-down"}`}
+                filter="url(#candleGlow)"
+              />
+            </g>
+          );
+        })}
 
-        <div className="hero-metrics">
-          <MetricCard
-            eyebrow="Live Status"
-            value={summary.dbExists ? "Operational" : "Offline"}
-            caption="Market data live / paper execution active"
-            tone={summary.dbExists ? "green" : "neutral"}
-          >
-            <div className="radar">
-              <span />
-              <span />
-            </div>
-          </MetricCard>
+        <path d={closePath} className="chart-close-shadow" filter="url(#lineShadow)" />
+        <path d={closePath} className="chart-close-line" />
 
-          <MetricCard
-            eyebrow="Open Paper Trades"
-            value={`${summary.openCount} / ${MAX_OPEN_PAPER_TRADES}`}
-            caption="Max 5 open paper trades"
-            tone="gold"
-          >
-            <div className="doc-icon">▱</div>
-          </MetricCard>
+        {markers.map((marker: MarketTradeMarker) => {
+          const entryIndex = locateMarkerIndex(candles, marker.entry_ts);
+          const exitIndex = marker.exit_ts ? locateMarkerIndex(candles, marker.exit_ts) : -1;
+          const entryX = entryIndex >= 0 ? paddingX + xStep * entryIndex : null;
+          const exitX = exitIndex >= 0 ? paddingX + xStep * exitIndex : null;
+          const entryY = yFromPrice(marker.entry_price);
+          const exitY =
+            exitX !== null && marker.exit_price != null ? yFromPrice(marker.exit_price) : null;
+          const isShort = sideLabel(marker.side) === "SHORT";
 
-          <MetricCard
-            eyebrow="Realized PnL"
-            value={formatCurrency(summary.realizedPnl)}
-            caption="All-time paper realized"
-            tone={summary.realizedPnl >= 0 ? "green" : "neutral"}
-          >
-            <Sparkline values={[1, 2, 1.7, 2.8, 2.5, 3.8, 3.1, 4.7]} />
-          </MetricCard>
+          return (
+            <g key={`marker-${marker.id}`}>
+              {entryX !== null ? (
+                <>
+                  <line
+                    x1={entryX}
+                    y1={paddingTop}
+                    x2={entryX}
+                    y2={height - paddingBottom}
+                    className="marker-line"
+                  />
+                  <polygon
+                    points={
+                      isShort
+                        ? `${entryX},${entryY + 8} ${entryX - 8},${entryY - 7} ${entryX + 8},${entryY - 7}`
+                        : `${entryX},${entryY - 8} ${entryX - 8},${entryY + 7} ${entryX + 8},${entryY + 7}`
+                    }
+                    className={`marker-entry ${isShort ? "marker-short" : "marker-long"}`}
+                  />
+                </>
+              ) : null}
 
-          <MetricCard
-            eyebrow="Win Rate"
-            value={formatPercentAuto(summary.winRate, 1)}
-            caption={`${formatNumber(summary.closedCount)} closed paper trades`}
-            tone="blue"
-          >
-            <div className="donut">
-              <span>{Math.round(Math.abs(summary.winRate) <= 1 ? summary.winRate * 100 : summary.winRate)}%</span>
-            </div>
-          </MetricCard>
+              {exitX !== null && exitY !== null ? (
+                <>
+                  <line
+                    x1={exitX}
+                    y1={paddingTop}
+                    x2={exitX}
+                    y2={height - paddingBottom}
+                    className="marker-line exit-line"
+                  />
+                  <rect
+                    x={exitX - 6}
+                    y={exitY - 6}
+                    width="12"
+                    height="12"
+                    rx="3"
+                    transform={`rotate(45 ${exitX} ${exitY})`}
+                    className="marker-exit"
+                  />
+                </>
+              ) : null}
+            </g>
+          );
+        })}
 
-          <MetricCard
-            eyebrow="Total Equity"
-            value={formatCurrency(summary.totalEquity)}
-            caption="Paper account equity"
-            tone="blue"
-          >
-            <Sparkline values={summary.equitySeries.slice(-12)} />
-          </MetricCard>
+        {candles.map((candle, index) => {
+          if (index % Math.ceil(candles.length / 6) !== 0 && index !== candles.length - 1) {
+            return null;
+          }
 
-          <MetricCard
-            eyebrow="Risk Profile"
-            value="Measured"
-            caption="Disciplined, transparent, capped"
-            tone="gold"
-          >
-            <div className="shield-icon">⌁</div>
-          </MetricCard>
-        </div>
-      </section>
+          const x = paddingX + xStep * index;
+          return (
+            <text key={`label-${candle.ts}`} x={x} y={height - 10} textAnchor="middle" className="chart-axis-label">
+              {new Date(candle.ts).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </text>
+          );
+        })}
+      </svg>
 
-      {data.error ? (
-        <section className="api-warning">
-          <strong>Demo API connection warning:</strong> {data.error}
-        </section>
-      ) : null}
-
-      <section className="dashboard-grid" id="live-demo">
-        <article className="panel equity-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Equity Curve / Paper</p>
-              <h2>{formatCurrencyPrecise(summary.totalEquity)}</h2>
-              <span className={summary.returnPct >= 0 ? "positive-text" : "negative-text"}>
-                {summary.returnPct >= 0 ? "+" : ""}
-                {summary.returnPct.toFixed(2)}% all-time return
-              </span>
-            </div>
-
-            <div className="range-tabs">
-              <button>1D</button>
-              <button>7D</button>
-              <button>1M</button>
-              <button>3M</button>
-              <button>YTD</button>
-              <button className="selected">ALL</button>
-            </div>
-          </div>
-
-          <EquityChart values={summary.equitySeries} />
-
-          <div className="chart-legend">
-            <span><i className="line blue" /> Equity</span>
-            <span><i className="line gold dotted" /> Buy & Hold Reference</span>
-            <small>Dates shown in exchange time UTC</small>
-          </div>
-        </article>
-
-        <article className="panel performance-panel" id="performance">
-          <div className="panel-heading compact">
-            <div>
-              <p className="eyebrow">Performance Summary</p>
-              <h2>Transparent Paper Telemetry</h2>
-            </div>
-          </div>
-
-          <div className="stat-matrix">
-            <div>
-              <span>Total Return</span>
-              <strong className={summary.returnPct >= 0 ? "positive-text" : "negative-text"}>
-                {summary.returnPct >= 0 ? "+" : ""}
-                {summary.returnPct.toFixed(2)}%
-              </strong>
-            </div>
-            <div>
-              <span>Realized PnL</span>
-              <strong>{formatCurrencyPrecise(summary.realizedPnl)}</strong>
-            </div>
-            <div>
-              <span>Unrealized PnL</span>
-              <strong>{formatCurrencyPrecise(summary.unrealizedPnl)}</strong>
-            </div>
-            <div>
-              <span>Closed Trades</span>
-              <strong>{formatNumber(summary.closedCount)}</strong>
-            </div>
-            <div>
-              <span>Open Trades</span>
-              <strong>{summary.openCount}</strong>
-            </div>
-            <div>
-              <span>Execution Broker</span>
-              <strong>{summary.brokerName}</strong>
-            </div>
-          </div>
-
-          <div className="distribution-block">
-            <div className="mini-heading">
-              <span>Return Distribution</span>
-              <small>Monthly view</small>
-            </div>
-            <MonthlyBars />
-          </div>
-        </article>
-
-        <article className="panel risk-panel" id="risk">
-          <div className="panel-heading compact">
-            <div>
-              <p className="eyebrow">Risk Checkpoint / Latest</p>
-              <h2>Execution Guardrails</h2>
-            </div>
-            <span className="timestamp">{new Date().toLocaleTimeString()} local</span>
-          </div>
-
-          <RiskRow
-            icon="◇"
-            label="Current open trade risk"
-            detail="of equity"
-            value={`${RISK_CHECKPOINT.currentOpenTradeRiskPct.toFixed(4)}%`}
-          />
-          <RiskRow
-            icon="◷"
-            label="Notional per trade"
-            detail="about of equity"
-            value={`${RISK_CHECKPOINT.notionalPerTradePct.toFixed(2)}%`}
-          />
-          <RiskRow
-            icon="▱"
-            label="Estimated 5-trade total stop-risk"
-            detail="of equity"
-            value={`${RISK_CHECKPOINT.fiveTradeTotalStopRiskPct.toFixed(4)}%`}
-          />
-
-          <div className="risk-summary">
-            <div>
-              <span>Position Sizing</span>
-              <strong>Disciplined</strong>
-            </div>
-            <div>
-              <span>Leverage</span>
-              <strong>Low</strong>
-            </div>
-            <div>
-              <span>Correlation</span>
-              <strong>Managed</strong>
-            </div>
-            <div>
-              <span>Liquidity</span>
-              <strong>High</strong>
-            </div>
-          </div>
-
-          <div className="system-parameters">
-            <div>
-              <span>Tracked Symbols</span>
-              <strong>{TRACKED_SYMBOL_TARGET}</strong>
-            </div>
-            <div>
-              <span>Max Open Paper Trades</span>
-              <strong>{MAX_OPEN_PAPER_TRADES}</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel universe-panel" id="technology">
-          <p className="eyebrow">Universe & Activity</p>
-
-          <div className="activity-grid">
-            <div>
-              <span>Tracked Symbols</span>
-              <strong>{TRACKED_SYMBOL_TARGET}</strong>
-            </div>
-            <div>
-              <span>Open Paper Trades</span>
-              <strong>{summary.openCount}</strong>
-            </div>
-            <div>
-              <span>Mode</span>
-              <strong>{summary.mode}</strong>
-            </div>
-            <div>
-              <span>Market Data</span>
-              <strong>Coinbase Advanced</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel symbols-panel">
-          <div className="table-heading">
-            <div>
-              <p className="eyebrow">Top Performing Symbols / Paper</p>
-              <h3>Current Leaders</h3>
-            </div>
-          </div>
-
-          <div className="table">
-            <div className="table-row table-head">
-              <span>Symbol</span>
-              <span>PnL</span>
-              <span>Last Price</span>
-              <span>Trend</span>
-            </div>
-
-            {topSymbols.map((row) => (
-              <div className="table-row" key={row.symbol}>
-                <span>{row.symbol}</span>
-                <span className={row.pnl >= 0 ? "positive-text" : "negative-text"}>
-                  {formatCurrencyPrecise(row.pnl)}
-                </span>
-                <span>{row.last > 0 ? formatCurrencyPrecise(row.last) : "Live watch"}</span>
-                <span>
-                  <Sparkline values={[1, 1.2, 1.1, 1.5, 1.4, 1.8, 1.7, 2]} />
-                </span>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel trades-panel">
-          <div className="table-heading">
-            <div>
-              <p className="eyebrow">Recent Paper Trades</p>
-              <h3>Read-Only Execution Feed</h3>
-            </div>
-            <span className="view-all">View all</span>
-          </div>
-
-          <div className="table">
-            <div className="table-row trade table-head">
-              <span>Symbol</span>
-              <span>Side</span>
-              <span>Size</span>
-              <span>Entry</span>
-              <span>Status</span>
-              <span>Risk</span>
-            </div>
-
-            {recentTrades.length > 0 ? (
-              recentTrades.map((trade, index) => (
-                <div className="table-row trade" key={`${trade.id || trade.symbol || "trade"}-${index}`}>
-                  <span>{cleanSymbol(trade.symbol)}</span>
-                  <span className={String(trade.side).toLowerCase() === "sell" ? "negative-text" : "positive-text"}>
-                    {cleanSide(trade.side)}
-                  </span>
-                  <span>{asNumber(trade.notional_pct, RISK_CHECKPOINT.notionalPerTradePct).toFixed(2)}%</span>
-                  <span>
-                    {getTradeEntryPrice(trade) > 0
-                      ? formatCurrencyPrecise(getTradeEntryPrice(trade))
-                      : "—"}
-                  </span>
-                  <span>
-                    <StatusDot active={isOpenTrade(trade)} />
-                    {String(trade.status || "open").toUpperCase()}
-                  </span>
-                  <span>
-                    {asNumber(trade.risk_pct, 0) > 0
-                      ? `${asNumber(trade.risk_pct, 0).toFixed(4)}%`
-                      : isOpenTrade(trade)
-                        ? `${RISK_CHECKPOINT.currentOpenTradeRiskPct.toFixed(4)}%`
-                        : "—"}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <div className="empty-row">
-                {data.loading ? "Loading paper trade feed..." : "No recent paper trades returned by API."}
-              </div>
-            )}
-          </div>
-        </article>
-      </section>
-
-      <section className="event-strip">
-        <div>
-          <span className="status-dot active" />
-          <strong>Live read-only demo telemetry</strong>
-        </div>
-        <p>
-          {lastEvent
-            ? `${lastEvent.symbol ? `${cleanSymbol(lastEvent.symbol)} · ` : ""}${
-                lastEvent.message || lastEvent.reason || lastEvent.event_type || lastEvent.type || "Latest event received"
-              }`
-            : "Awaiting latest runner event from the demo API."}
-        </p>
-      </section>
-
-      <footer className="footer" id="contact">
-        <div>
-          <strong>Fayt Systems</strong>
-          <span>Institutional framework. Disciplined execution. Transparent outcomes.</span>
-        </div>
-        <small>Public read-only paper demo. No real Coinbase orders are enabled.</small>
-      </footer>
-    </main>
+      <ChartLegend />
+    </div>
   );
 }
 
-export default App;
+function RankedMovers({ symbols, onSelect, selectedSymbol }: {
+  symbols: MarketBoardSymbol[];
+  onSelect: (symbol: string) => void;
+  selectedSymbol: string;
+}) {
+  const sorted = useMemo(
+    () => [...symbols].sort((a, b) => b.pct_change - a.pct_change),
+    [symbols]
+  );
+
+  return (
+    <div className="panel panel-scroll">
+      <div className="panel-header-row">
+        <div className="panel-title">Ranked Movers</div>
+        <div className="panel-kicker">Live Ranked Net Change</div>
+      </div>
+      <div className="movers-list">
+        {sorted.map((item) => {
+          const pct = Math.max(Math.min(item.pct_change, 10), -10);
+          const width = `${Math.max(8, Math.abs(pct) * 9)}%`;
+
+          return (
+            <button
+              key={item.symbol}
+              className={`mover-row ${selectedSymbol === item.symbol ? "selected" : ""}`}
+              onClick={() => onSelect(item.symbol)}
+            >
+              <div className="mover-meta">
+                <span className="mover-symbol">{item.symbol}</span>
+                <span className={`mover-value ${item.pct_change >= 0 ? "positive" : "negative"}`}>
+                  {formatPct(item.pct_change)}
+                </span>
+              </div>
+              <div className="mover-bar-shell">
+                <div
+                  className={`mover-bar ${item.pct_change >= 0 ? "positive" : "negative"}`}
+                  style={{ width }}
+                />
+              </div>
+              <div className="mover-submeta">
+                <span>{formatCompactCurrency(item.last_price)}</span>
+                <span>H {item.high.toFixed(2)} / L {item.low.toFixed(2)}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OpenPositions({ trades }: { trades: DemoTrade[] }) {
+  return (
+    <div className="panel panel-scroll">
+      <div className="panel-header-row">
+        <div className="panel-title">Open Positions</div>
+        <div className="panel-kicker">Live Est. PnL After Slippage & Fees</div>
+      </div>
+
+      <div className="position-list">
+        {trades.length === 0 ? (
+          <div className="empty-state">No open positions.</div>
+        ) : (
+          trades.map((trade) => {
+            const pnl = estimatePnlAfterCosts(trade);
+            const target = trade.take_profit ?? trade.exit_price ?? 0;
+
+            return (
+              <div key={trade.id} className="position-card">
+                <div className="position-top">
+                  <div>
+                    <div className="position-symbol">{trade.symbol}</div>
+                    <div className={`position-side ${sideLabel(trade.side) === "LONG" ? "long" : "short"}`}>
+                      {sideLabel(trade.side)}
+                    </div>
+                  </div>
+                  <div className={`position-pnl ${pnl >= 0 ? "positive" : "negative"}`}>
+                    {formatSignedCurrency(pnl)}
+                  </div>
+                </div>
+
+                <div className="position-grid">
+                  <div>
+                    <span className="label">Entry</span>
+                    <strong>{trade.entry_price.toFixed(4)}</strong>
+                  </div>
+                  <div>
+                    <span className="label">Live</span>
+                    <strong>{Number(trade.current_price ?? trade.entry_price).toFixed(4)}</strong>
+                  </div>
+                  <div>
+                    <span className="label">Target</span>
+                    <strong>{target ? target.toFixed(4) : "—"}</strong>
+                  </div>
+                  <div>
+                    <span className="label">Stop</span>
+                    <strong>{trade.stop_loss ? trade.stop_loss.toFixed(4) : "—"}</strong>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed({ events }: { events: DemoEvent[] }) {
+  return (
+    <div className="panel panel-scroll">
+      <div className="panel-header-row">
+        <div className="panel-title">Live Activity</div>
+        <div className="panel-kicker">Runner / DB Event Feed</div>
+      </div>
+
+      <div className="activity-list">
+        {events.length === 0 ? (
+          <div className="empty-state">No recent events.</div>
+        ) : (
+          events.map((event) => (
+            <div key={event.id} className="activity-row">
+              <div className="activity-time">
+                {new Date(event.event_ts).toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </div>
+              <div className="activity-body">
+                <div className="activity-type">{event.event_type}</div>
+                <div className="activity-meta">
+                  {event.symbol || "SYSTEM"}
+                  {event.payload_json ? ` · ${String(event.payload_json).slice(0, 84)}` : ""}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [bundle, setBundle] = useState<DashboardBundle | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState("BTC/USD");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  const clock = useClock();
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const next = await fetchDashboardBundle();
+        if (!active) return;
+
+        setBundle(next);
+
+        const preferred =
+          next.openTrades[0]?.symbol ||
+          next.marketBoard.symbols[0]?.symbol ||
+          "BTC/USD";
+
+        setSelectedSymbol((current) =>
+          next.marketBoard.symbols.some((item) => item.symbol === current)
+            ? current
+            : preferred
+        );
+
+        setError("");
+      } catch {
+        if (active) {
+          setError("Unable to load boardroom data.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+    const interval = window.setInterval(() => {
+      void load();
+    }, POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const status = bundle?.status ?? {
+    mode: "paper",
+    broker_name: "paper_sim",
+    db_exists: false,
+    starting_equity: 30000,
+    total_equity: 30000,
+    realized_pnl: 0,
+    unrealized_pnl: 0,
+    open_trade_count: 0,
+    closed_trade_count: 0,
+    win_rate: 0,
+  };
+
+  const openTrades = bundle?.openTrades ?? [];
+  const closedTrades = bundle?.closedTrades ?? [];
+  const marketSymbols = bundle?.marketBoard.symbols ?? [];
+  const events = bundle?.events ?? [];
+
+  const selectedData = marketSymbols.find((item) => item.symbol === selectedSymbol);
+
+  const wins = useMemo(
+    () => closedTrades.filter((trade) => Number(trade.realized_pnl ?? 0) > 0).length,
+    [closedTrades]
+  );
+
+  const losses = useMemo(
+    () => closedTrades.filter((trade) => Number(trade.realized_pnl ?? 0) <= 0).length,
+    [closedTrades]
+  );
+
+  const livePnL = useMemo(() => {
+    const delta = Number(status.total_equity ?? 0) - Number(status.starting_equity ?? 0);
+    if (Number.isFinite(delta) && delta !== 0) return delta;
+    return Number(status.realized_pnl ?? 0) + Number(status.unrealized_pnl ?? 0);
+  }, [status.realized_pnl, status.starting_equity, status.total_equity, status.unrealized_pnl]);
+
+  const boardroomBalance = DISPLAY_STARTING_BALANCE + livePnL;
+
+  const winFlash = useDirectionalFlash(wins, { up: "flash-win" });
+  const lossFlash = useDirectionalFlash(losses, { up: "flash-loss" });
+  const pnlFlash = useDirectionalFlash(livePnL, {
+    up: "flash-pnl-up",
+    down: "flash-pnl-down",
+  });
+
+  const topTicker = useMemo(() => marketSymbols.slice(0, 10), [marketSymbols]);
+
+  return (
+    <div className="boardroom-app">
+      <div className="boardroom-shell">
+        <header className="hero-banner panel">
+          <div className="hero-crest">
+            <div className="hero-crest-inner">FS</div>
+          </div>
+
+          <div className="hero-copy">
+            <div className="hero-brand">FaytSystems</div>
+            <div className="hero-title">Boardroom Dashboard</div>
+            <div className="hero-subtitle">
+              Certified Execution Intelligence · Live Paper Telemetry · Slippage-Aware PnL
+            </div>
+          </div>
+
+          <div className="hero-meta">
+            <div className="hero-clock">{clock}</div>
+            <div className="hero-badges">
+              <span className="hero-badge">DB {status.db_exists ? "LIVE" : "OFFLINE"}</span>
+              <span className="hero-badge">{status.mode.toUpperCase()}</span>
+              <span className="hero-badge">{String(status.broker_name || "paper_sim").toUpperCase()}</span>
+            </div>
+          </div>
+
+          <div className="hero-sweep"></div>
+        </header>
+
+        <TickerStrip items={topTicker} />
+
+        {error ? <div className="error-banner panel">{error}</div> : null}
+
+        <div className="dashboard-grid">
+          <section className="panel panel-chart-main">
+            <div className="panel-header-row">
+              <div>
+                <div className="panel-title">Live 3D Trade Chart</div>
+                <div className="panel-kicker">
+                  Trade Entry / Exit Markers · Candle Colors From Live DB
+                </div>
+              </div>
+
+              <div className="symbol-pills">
+                {marketSymbols.slice(0, 8).map((item) => (
+                  <button
+                    key={item.symbol}
+                    className={`symbol-pill ${item.symbol === selectedSymbol ? "selected" : ""}`}
+                    onClick={() => setSelectedSymbol(item.symbol)}
+                  >
+                    {item.symbol}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="chart-header-metrics">
+              <div className="chart-symbol">{selectedSymbol}</div>
+              <div className={`chart-change ${(selectedData?.pct_change ?? 0) >= 0 ? "positive" : "negative"}`}>
+                {selectedData ? formatPct(selectedData.pct_change) : "—"}
+              </div>
+              <div className="chart-mini-stat">
+                Last {selectedData ? formatCompactCurrency(selectedData.last_price) : "—"}
+              </div>
+              <div className="chart-mini-stat">
+                High {selectedData ? selectedData.high.toFixed(2) : "—"}
+              </div>
+              <div className="chart-mini-stat">
+                Low {selectedData ? selectedData.low.toFixed(2) : "—"}
+              </div>
+            </div>
+
+            <CandleChart symbolData={selectedData} selectedSymbol={selectedSymbol} />
+          </section>
+
+          <section className="metrics-stack">
+            <StatCard
+              title="Wins"
+              value={formatNumber(wins)}
+              subValue={`${status.closed_trade_count} closed trades · ${status.win_rate.toFixed(2)}% win rate`}
+              tone="gold"
+              flashClass={winFlash}
+              footnote="Golden flash on new win, then reverts to theme."
+            />
+
+            <StatCard
+              title="Losses"
+              value={formatNumber(losses)}
+              subValue={`${status.open_trade_count} open trades currently`}
+              tone="negative"
+              flashClass={lossFlash}
+              footnote="Red fade / sink effect on new loss, then reverts to theme."
+            />
+
+            <StatCard
+              title="Boardroom Balance"
+              value={formatCurrency(boardroomBalance)}
+              subValue={`Starting balance ${formatCurrency(DISPLAY_STARTING_BALANCE)}`}
+              tone={livePnL >= 0 ? "positive" : "negative"}
+              flashClass={pnlFlash}
+              footnote={`Live PnL ${formatSignedCurrency(livePnL)}`}
+            />
+          </section>
+
+          <section className="panel panel-summary-grid">
+            <div className="summary-cell">
+              <span className="summary-label">Realized PnL</span>
+              <strong className={Number(status.realized_pnl) >= 0 ? "positive" : "negative"}>
+                {formatSignedCurrency(Number(status.realized_pnl))}
+              </strong>
+            </div>
+            <div className="summary-cell">
+              <span className="summary-label">Unrealized PnL</span>
+              <strong className={Number(status.unrealized_pnl) >= 0 ? "positive" : "negative"}>
+                {formatSignedCurrency(Number(status.unrealized_pnl))}
+              </strong>
+            </div>
+            <div className="summary-cell">
+              <span className="summary-label">Open Positions</span>
+              <strong>{formatNumber(status.open_trade_count)}</strong>
+            </div>
+            <div className="summary-cell">
+              <span className="summary-label">Closed Trades</span>
+              <strong>{formatNumber(status.closed_trade_count)}</strong>
+            </div>
+          </section>
+
+          <OpenPositions trades={openTrades} />
+          <RankedMovers
+            symbols={marketSymbols}
+            selectedSymbol={selectedSymbol}
+            onSelect={setSelectedSymbol}
+          />
+          <ActivityFeed events={events} />
+        </div>
+
+        {loading ? <div className="loading-overlay">Loading boardroom dashboard…</div> : null}
+      </div>
+    </div>
+  );
+}

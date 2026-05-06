@@ -3,252 +3,224 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-from functools import lru_cache
-from typing import Any, Callable
+from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import FastAPI, Query, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .demo_models import (
-    DemoEquityPoint,
-    DemoEvent,
-    DemoSnapshot,
-    DemoStatus,
-    DemoTrade,
-    DemoWsMessage,
+from cryptotrader.demo.demo_repo import DemoRepo
+from cryptotrader.demo.demo_risk_projection import RiskProjectionEngine
+from cryptotrader.demo.demo_status_overlay import (
+    get_public_demo_status,
+    install_demo_status_overlay,
 )
-from .demo_repo import DemoRepo
-from .demo_risk_projection import RiskProjectionEngine
 
 
-def _env_bool(key: str, default: bool = False) -> bool:
-    raw = os.getenv(key)
-
-    if raw is None:
-        return default
-
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _split_origins(value: str | None) -> list[str]:
-    if value is None or not value.strip():
-        return ["http://127.0.0.1:5173", "http://localhost:5173"]
-
-    if value.strip() == "*":
-        return ["*"]
-
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _parse_float_list(raw: str | None, default: list[float]) -> list[float]:
-    if raw is None or not raw.strip():
-        return default
-
-    values: list[float] = []
-
-    for item in raw.replace(";", ",").split(","):
-        try:
-            values.append(float(item.strip()))
-        except Exception:
-            continue
-
-    return values or default
-
-
-@lru_cache(maxsize=1)
-def get_repo() -> DemoRepo:
-    return DemoRepo(
-        db_path=os.getenv(
-            "DEMO_DB_PATH",
-            r"D:\CryptoTrader\data\cryptotrader.db",
-        ),
-        starting_equity=float(os.getenv("DEMO_STARTING_EQUITY", "30000")),
-        broker_name=os.getenv("DEMO_BROKER_NAME", "paper_sim"),
+def _resolve_demo_db_path() -> str:
+    return (
+        os.getenv("DEMO_DB_PATH")
+        or os.getenv("LIVE_DB_PATH")
+        or os.getenv("DB_PATH")
+        or r"D:\CryptoTrader\data\fayt_public_demo_live.db"
     )
 
 
-def get_risk_projection_engine() -> RiskProjectionEngine:
-    repo = get_repo()
-
-    return RiskProjectionEngine(
-        db_path=repo.db_path,
-        account_sizes=_parse_float_list(
-            os.getenv("DEMO_PROJECTION_ACCOUNT_SIZES"),
-            [1000.0, 5000.0, 10000.0, 25000.0, 100000.0],
-        ),
-        risk_levels=_parse_float_list(
-            os.getenv("DEMO_PROJECTION_RISK_LEVELS"),
-            [1.25, 2.5, 5.0, 10.0, 25.0],
-        ),
-        fallback_stop_pct=float(os.getenv("DEMO_PROJECTION_FALLBACK_STOP_PCT", "0.01")),
-    )
-
-
-DOCS_ENABLED = _env_bool("DEMO_ENABLE_DOCS", False)
+repo = DemoRepo(_resolve_demo_db_path())
 
 app = FastAPI(
-    title="Fayt Systems Public Demo API",
-    version="1.1.0",
-    docs_url="/docs" if DOCS_ENABLED else None,
-    redoc_url="/redoc" if DOCS_ENABLED else None,
-    openapi_url="/openapi.json" if DOCS_ENABLED else None,
+    title="Fayt Systems Demo API",
+    version="2.1.0",
+    description="Read-only public demo API for FaytSystems boardroom dashboard telemetry.",
 )
-
-origins = _split_origins(os.getenv("DEMO_ALLOWED_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "HEAD", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
 @app.middleware("http")
-async def read_only_guard(request: Request, call_next: Callable):
-    if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+async def read_only_guard(request: Request, call_next):
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
         return JSONResponse(
             status_code=405,
-            content={
-                "ok": False,
-                "error": "read_only_demo_api",
-                "message": "This public demo API only allows GET, HEAD, and OPTIONS.",
-            },
+            content={"detail": "Read-only demo API. Only GET/HEAD/OPTIONS are allowed."},
         )
 
-    response = await call_next(request)
-
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
-
-    return response
+    return await call_next(request)
 
 
-def _no_store(response: Response) -> None:
-    response.headers["Cache-Control"] = "no-store"
+def _snapshot() -> dict[str, Any]:
+    snapshot = repo.get_snapshot()
+    snapshot["generated_at"] = _utc_now_iso()
+    snapshot["status"] = get_public_demo_status()
+
+    if "market_board" not in snapshot or snapshot["market_board"] is None:
+        snapshot["market_board"] = repo.get_market_board(limit=60)
+
+    return snapshot
 
 
-@app.get("/health")
-def health(response: Response) -> dict[str, object]:
-    _no_store(response)
+def _fallback_risk_projection() -> dict[str, Any]:
+    status = get_public_demo_status()
+    risk_levels = [1.25, 2.5, 5.0, 10.0, 25.0]
+    account_sizes = [1000, 5000, 10000, 25000, 100000]
+    open_count = max(int(status.get("open_trade_count", 0)), 1)
 
-    repo = get_repo()
+    accounts = []
+
+    for account_size in account_sizes:
+        scenarios = []
+
+        for risk_pct in risk_levels:
+            risk_dollars = float(account_size) * (float(risk_pct) / 100.0)
+
+            scenarios.append(
+                {
+                    "risk_pct": risk_pct,
+                    "risk_key": f"risk_{str(risk_pct).replace('.', '_')}pct",
+                    "summary": {
+                        "account_size": account_size,
+                        "risk_pct": risk_pct,
+                        "starting_equity": account_size,
+                        "closed_equity": account_size,
+                        "live_equity": account_size,
+                        "closed_pnl": 0.0,
+                        "live_unrealized_pnl": 0.0,
+                        "total_live_pnl": 0.0,
+                        "closed_return_pct": 0.0,
+                        "live_return_pct": 0.0,
+                        "max_drawdown_pct": 0.0,
+                        "wins": int(status.get("winners", 0)),
+                        "losses": int(status.get("losers", 0)),
+                        "win_rate": float(status.get("win_rate", 0.0)),
+                        "best_trade": 0.0,
+                        "worst_trade": 0.0,
+                        "closed_trades_used": int(status.get("closed_trade_count", 0)),
+                        "open_trades_used": int(status.get("open_trade_count", 0)),
+                        "risk_dollars": round(risk_dollars, 2),
+                        "per_open_trade_risk": round(risk_dollars / open_count, 2),
+                        "account_blown": False,
+                    },
+                    "closed_rows": [],
+                    "open_rows": [],
+                }
+            )
+
+        accounts.append(
+            {
+                "account_size": account_size,
+                "scenarios": scenarios,
+            }
+        )
 
     return {
-        "status": "ok" if repo.db_exists() else "degraded",
-        "mode": "read_only_demo",
-        "db_exists": repo.db_exists(),
-        "db_path": str(repo.db_path),
+        "generated_at": _utc_now_iso(),
+        "db_path": repo.db_path,
+        "risk_levels": risk_levels,
+        "account_sizes": account_sizes,
+        "accounts": accounts,
+        "overview": [scenario["summary"] for account in accounts for scenario in account["scenarios"]],
+        "meta": {
+            "trade_rows_seen": 0,
+            "closed_trades_projected": int(status.get("closed_trade_count", 0)),
+            "open_trades_projected": int(status.get("open_trade_count", 0)),
+            "fallback": True,
+            "disclaimer": (
+                "Read-only hypothetical projection. This does not place trades. "
+                "Projected PnL does not guarantee future results."
+            ),
+        },
     }
 
 
-@app.get("/demo/status", response_model=DemoStatus)
-def demo_status(response: Response) -> DemoStatus:
-    _no_store(response)
-    return get_repo().get_status()
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    status = get_public_demo_status()
+
+    return {
+        "ok": True,
+        "db_path": repo.db_path,
+        "db_exists": status["db_exists"],
+        "mode": status["mode"],
+        "broker_name": status["broker_name"],
+        "orders_allowed": False,
+    }
 
 
-@app.get("/demo/open-trades", response_model=list[DemoTrade])
-def demo_open_trades(
-    response: Response,
-    limit: int = Query(default=25, ge=1, le=250),
-) -> list[DemoTrade]:
-    _no_store(response)
-    return get_repo().get_open_trades(limit=limit)
+@app.get("/demo/status")
+async def demo_status() -> dict[str, Any]:
+    return get_public_demo_status()
 
 
-@app.get("/demo/closed-trades", response_model=list[DemoTrade])
-def demo_closed_trades(
-    response: Response,
-    limit: int = Query(default=50, ge=1, le=500),
-) -> list[DemoTrade]:
-    _no_store(response)
-    return get_repo().get_closed_trades(limit=limit)
+@app.get("/demo/open-trades")
+async def demo_open_trades(limit: int = 25) -> list[dict[str, Any]]:
+    return repo.get_open_trades(limit=limit)
 
 
-@app.get("/demo/equity", response_model=list[DemoEquityPoint])
-def demo_equity(
-    response: Response,
-    limit: int = Query(default=250, ge=1, le=5000),
-) -> list[DemoEquityPoint]:
-    _no_store(response)
-    return get_repo().get_equity(limit=limit)
+@app.get("/demo/closed-trades")
+async def demo_closed_trades(limit: int = 100) -> list[dict[str, Any]]:
+    return repo.get_closed_trades(limit=limit)
 
 
-@app.get("/demo/events", response_model=list[DemoEvent])
-def demo_events(
-    response: Response,
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[DemoEvent]:
-    _no_store(response)
-    return get_repo().get_events(limit=limit)
+@app.get("/demo/equity")
+async def demo_equity(limit: int = 240) -> list[dict[str, Any]]:
+    return repo.get_equity(limit=limit)
 
 
-@app.get("/demo/snapshot", response_model=DemoSnapshot)
-def demo_snapshot(
-    response: Response,
-    open_trade_limit: int = Query(default=25, ge=1, le=250),
-    closed_trade_limit: int = Query(default=50, ge=1, le=500),
-    event_limit: int = Query(default=100, ge=1, le=500),
-    equity_limit: int = Query(default=250, ge=1, le=5000),
-) -> DemoSnapshot:
-    _no_store(response)
+@app.get("/demo/events")
+async def demo_events(limit: int = 100) -> list[dict[str, Any]]:
+    return repo.get_events(limit=limit)
 
-    return get_repo().get_snapshot(
-        open_trade_limit=open_trade_limit,
-        closed_trade_limit=closed_trade_limit,
-        event_limit=event_limit,
-        equity_limit=equity_limit,
-    )
+
+@app.get("/demo/market-board")
+async def demo_market_board(timeframe: str = "1m", limit: int = 60) -> dict[str, Any]:
+    return repo.get_market_board(timeframe=timeframe, limit=limit)
 
 
 @app.get("/demo/risk-projection")
-def demo_risk_projection(
-    response: Response,
-    trade_limit: int = Query(default=10_000, ge=1, le=100_000),
-    row_limit: int = Query(default=50, ge=1, le=500),
-) -> dict[str, Any]:
-    _no_store(response)
+async def demo_risk_projection(trade_limit: int = 10_000, row_limit: int = 50) -> dict[str, Any]:
+    try:
+        return RiskProjectionEngine(repo.db_path).build_projection(
+            trade_limit=trade_limit,
+            row_limit=row_limit,
+        )
+    except Exception as exc:
+        projection = _fallback_risk_projection()
+        projection["meta"]["fallback_reason"] = str(exc)
+        return projection
 
-    return get_risk_projection_engine().build_projection(
-        trade_limit=trade_limit,
-        row_limit=row_limit,
-    )
+
+@app.get("/demo/snapshot")
+async def demo_snapshot() -> dict[str, Any]:
+    return _snapshot()
 
 
 @app.websocket("/demo/ws")
 async def demo_ws(websocket: WebSocket) -> None:
     await websocket.accept()
 
-    push_seconds = float(os.getenv("DEMO_WS_PUSH_SECONDS", "2.0"))
-    push_seconds = max(0.5, min(push_seconds, 30.0))
-
-    last_serialized: str | None = None
-
     try:
         while True:
-            snapshot = get_repo().get_snapshot(
-                open_trade_limit=25,
-                closed_trade_limit=50,
-                event_limit=100,
-                equity_limit=250,
+            await websocket.send_json(
+                {
+                    "type": "snapshot",
+                    "data": _snapshot(),
+                }
             )
-
-            envelope = DemoWsMessage(type="snapshot", data=snapshot).model_dump(mode="json")
-            serialized = json.dumps(envelope, separators=(",", ":"), sort_keys=True)
-
-            if serialized != last_serialized:
-                await websocket.send_text(serialized)
-                last_serialized = serialized
-
-            await asyncio.sleep(push_seconds)
-
+            await asyncio.sleep(2.0)
     except WebSocketDisconnect:
         return
+
+
+install_demo_status_overlay(app)

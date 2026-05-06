@@ -29,6 +29,33 @@ function buildWsUrl(): string {
   return `${normalized.replace(/\/+$/, "")}/demo/ws`;
 }
 
+function looksLikeSnapshot(value: unknown): value is DemoSnapshot {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<DemoSnapshot>;
+  return Boolean(candidate.status && Array.isArray(candidate.open_trades));
+}
+
+function unwrapSnapshot(raw: unknown): DemoSnapshot | null {
+  if (looksLikeSnapshot(raw)) {
+    return raw;
+  }
+
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const envelope = raw as Partial<Envelope>;
+
+  if (envelope.type === "snapshot" && looksLikeSnapshot(envelope.data)) {
+    return envelope.data;
+  }
+
+  return null;
+}
+
 export function connectDemoStream(handlers: DemoStreamHandlers): () => void {
   let stopped = false;
   let socket: WebSocket | null = null;
@@ -45,10 +72,11 @@ export function connectDemoStream(handlers: DemoStreamHandlers): () => void {
 
     socket.onmessage = (event) => {
       try {
-        const envelope = JSON.parse(String(event.data)) as Envelope;
+        const parsed = JSON.parse(String(event.data));
+        const snapshot = unwrapSnapshot(parsed);
 
-        if (envelope.type === "snapshot") {
-          handlers.onSnapshot(envelope.data as DemoSnapshot);
+        if (snapshot) {
+          handlers.onSnapshot(snapshot);
         }
       } catch {
         // Ignore malformed frames.
