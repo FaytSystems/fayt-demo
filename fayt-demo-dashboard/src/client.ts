@@ -244,3 +244,9 @@ export async function fetchDashboardBundle(): Promise<DashboardBundle> {
     marketBoard,
   };
 }
+
+// FAYT_DEMO_LIVE_RUNNER_SIG300_TYPES_BEGIN
+export type Sig300PublicDecision = { symbol: string; approved: boolean; denied: boolean; };
+export type Sig300PublicStatus = { ok?: boolean; source?: string; count?: number; approved_count?: number; denied_count?: number; decisions?: Sig300PublicDecision[]; };
+// FAYT_DEMO_LIVE_RUNNER_SIG300_TYPES_END
+

@@ -14,9 +14,15 @@ from fastapi.responses import JSONResponse
 from cryptotrader.demo.demo_repo import DemoRepo
 from cryptotrader.demo.demo_risk_projection import RiskProjectionEngine
 from cryptotrader.demo.demo_status_overlay import (
+
     get_public_demo_status,
     install_demo_status_overlay,
 )
+
+# FAYT_DEMO_LIVE_RUNNER_SIG300_IMPORT_BEGIN
+from cryptotrader.demo.sig300_public import public_sig300_summary, sync_public_sig300_decisions
+# FAYT_DEMO_LIVE_RUNNER_SIG300_IMPORT_END
+
 
 
 def _utc_now_iso() -> str:
@@ -224,3 +230,48 @@ async def demo_ws(websocket: WebSocket) -> None:
 
 
 install_demo_status_overlay(app)
+
+# FAYT_DEMO_LIVE_RUNNER_SIG300_ROUTE_BEGIN
+@app.get("/demo/sig300-decisions")
+async def demo_sig300_decisions():
+    """Public-safe live-runner SIG300 pass/fail rows.
+
+    This endpoint intentionally exposes only symbol / approved / denied.
+    It does not expose reasons, atoms, policy scores, db paths, target/stop values,
+    or internal candidate JSON.
+    """
+    return public_sig300_summary(getattr(repo, "db_path", None))
+
+
+@app.get("/demo/live-runner")
+async def demo_live_runner():
+    """Alias for the public demo website live-runner panel."""
+    return public_sig300_summary(getattr(repo, "db_path", None))
+
+
+@app.post("/internal/sync-sig300-public-demo")
+async def internal_sync_sig300_public_demo():
+    """Local/private helper only; do not expose this route publicly through Cloudflare."""
+    return sync_public_sig300_decisions(demo_db_path=getattr(repo, "db_path", None))
+# FAYT_DEMO_LIVE_RUNNER_SIG300_ROUTE_END
+
+
+
+# FAYT_LIVE_CANDLES_API_BEGIN
+# Public-safe OHLCV candle endpoints for the Fayt demo chart layer.
+# Installed by fayt_demo_live_candles_bundle_v1. Read-only; no broker/order controls.
+from cryptotrader.demo.live_candles import (
+    get_public_live_candle_board,
+    get_public_live_candles,
+)
+
+
+@app.get("/demo/live-candles")
+async def demo_live_candles(symbol: str = "AAVE/USD", timeframe: str = "60m", limit: int = 96):
+    return get_public_live_candles(symbol=symbol, timeframe=timeframe, limit=limit)
+
+
+@app.get("/demo/live-candle-board")
+async def demo_live_candle_board(symbols: str | None = None, timeframe: str = "60m", limit: int = 96):
+    return get_public_live_candle_board(symbols=symbols, timeframe=timeframe, limit=limit)
+# FAYT_LIVE_CANDLES_API_END
