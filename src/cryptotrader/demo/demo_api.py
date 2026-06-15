@@ -275,3 +275,15 @@ async def demo_live_candles(symbol: str = "AAVE/USD", timeframe: str = "60m", li
 async def demo_live_candle_board(symbols: str | None = None, timeframe: str = "60m", limit: int = 96):
     return get_public_live_candle_board(symbols=symbols, timeframe=timeframe, limit=limit)
 # FAYT_LIVE_CANDLES_API_END
+
+# FAYT_CLEAN_DEMO_BOARD_ROUTES_BEGIN
+# Public-safe live trade rows for the clean Fayt demo page.
+# Only symbol, side, target exit, current price, PnL, and entry/exit marker prices are exposed.
+from cryptotrader.demo.public_live_trades import get_public_live_trades
+
+
+@app.get("/demo/live-trades")
+async def demo_live_trades(symbols: str | None = None, timeframe: str = "60m", limit: int = 50):
+    return get_public_live_trades(symbols=symbols, timeframe=timeframe, limit=limit)
+# FAYT_CLEAN_DEMO_BOARD_ROUTES_END
+
