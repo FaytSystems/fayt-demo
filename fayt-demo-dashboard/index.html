@@ -2,106 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <title>Fayt Systems Demo | Read-Only Digital Asset Execution Infrastructure</title>
-
-    <meta
-      name="description"
-      content="Explore the Fayt Systems public demo: a read-only paper-sim dashboard showing audit-verifiable digital asset execution infrastructure, equity tracking, open trades, closed trades, events, and live risk projections."
-    />
-
-    <meta
-      name="keywords"
-      content="Fayt Systems, Fayt demo, digital asset execution infrastructure, crypto trading infrastructure, paper trading demo, automated execution system, audit-verifiable trading, crypto risk projection, fintech infrastructure"
-    />
-
-    <meta name="author" content="Fayt Systems" />
-    <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#06111f" />
-
-    <link rel="canonical" href="https://demo.faytsystems.com/" />
-    <link rel="icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
-
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Fayt Systems" />
-    <meta
-      property="og:title"
-      content="Fayt Systems Demo | Read-Only Digital Asset Execution Infrastructure"
-    />
-    <meta
-      property="og:description"
-      content="A public read-only paper-sim demo for Fayt Systems: audit-verifiable digital asset execution infrastructure with live dashboard data, trade history, events, and risk projections."
-    />
-    <meta property="og:url" content="https://demo.faytsystems.com/" />
-    <meta property="og:image" content="https://demo.faytsystems.com/og-fayt-demo.png" />
-    <meta property="og:image:alt" content="Fayt Systems public demo dashboard preview" />
-
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@FaytSystems" />
-    <meta
-      name="twitter:title"
-      content="Fayt Systems Demo | Digital Asset Execution Infrastructure"
-    />
-    <meta
-      name="twitter:description"
-      content="Explore the public Fayt Systems read-only paper-sim demo with live account status, trade history, events, and risk projection data."
-    />
-    <meta name="twitter:image" content="https://demo.faytsystems.com/og-fayt-demo.png" />
-
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Fayt Systems Demo",
-        "applicationCategory": "FinanceApplication",
-        "operatingSystem": "Web",
-        "url": "https://demo.faytsystems.com/",
-        "description": "A public read-only paper-sim demo showing audit-verifiable digital asset execution infrastructure, trade status, equity tracking, events, and risk projection data.",
-        "creator": {
-          "@type": "Organization",
-          "name": "Fayt Systems",
-          "url": "https://faytsystems.com/"
-        },
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        }
-      }
-    </script>
+    <meta name="theme-color" content="#030712" />
+    <meta name="description" content="Fayt Systems live execution demo." />
+    <title>Fayt Systems Demo</title>
   </head>
-
   <body>
-    <noscript>
-      <main style="font-family: Arial, sans-serif; max-width: 760px; margin: 48px auto; padding: 0 20px;">
-        <h1>Fayt Systems Demo</h1>
-        <p>
-          Fayt Systems provides a read-only public paper-sim demo for digital asset execution
-          infrastructure. The dashboard displays paper account status, open trades, closed trades,
-          event history, equity tracking, and risk projection data.
-        </p>
-        <p>
-          This demo is not financial advice. Automated trading involves risk. Paper-simulated and
-          historical results do not guarantee future performance.
-        </p>
-      </main>
-    </noscript>
-
     <div id="root"></div>
-
-    <script type="module" src="/src/main.tsx"></script>
-
-  <!-- FAYT_LIVE_CANDLES_SCRIPT_BEGIN -->
-<!-- FAYT_LIVE_CANDLES_SCRIPT_END -->
-  <script>
-    window.FAYT_DEMO_API_BASE = "https://demo-api.faytsystems.com";
-  </script>
-  <script src="/fayt-live-candles.js" defer></script>
-</body>
+    <script type="module" src="/src/App.tsx"></script>
+  </body>
 </html>
-
 

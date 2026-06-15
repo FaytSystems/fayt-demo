@@ -214,3 +214,10 @@ h2 { font-size: clamp(18px, 2vw, 28px); }
   .tradeRow { grid-template-columns: 1fr 0.7fr; }
   .tradeRow.head { display: none; }
 }
+
+/* Clean demo: hide chart intro/status/stat strip, keep chart/trades/PnL */
+.heroStrip,
+.chartHeader,
+.statGrid {
+  display: none !important;
+}
