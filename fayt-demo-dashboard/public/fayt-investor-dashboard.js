@@ -438,7 +438,7 @@
   }
 
   function handleError(err) {
-    console.error(err);
+    console.warn("[FAYT demo feed]", err && err.message ? err.message : String(err));
     setStatus("Feed waiting", false);
     $("feedMessage").textContent = "Live feed warming up. Telemetry will populate as soon as the API responds.";
   }
