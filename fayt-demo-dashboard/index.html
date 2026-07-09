@@ -3,877 +3,142 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fayt Systems Demo</title>
-  <style>
-    * { box-sizing: border-box; }
-
-    :root {
-      color-scheme: dark;
-      --bg: #020617;
-      --panel: rgba(15, 23, 42, 0.84);
-      --panel2: rgba(2, 6, 23, 0.92);
-      --line: rgba(148, 163, 184, 0.18);
-      --muted: #94a3b8;
-      --text: #e5eefb;
-      --green: #22c55e;
-      --green2: #86efac;
-      --red: #ef4444;
-      --red2: #fca5a5;
-      --blue: #38bdf8;
-      --teal: #2dd4bf;
-      --amber: #f59e0b;
-    }
-
-    html, body {
-      min-height: 100%;
-      margin: 0;
-      background:
-        radial-gradient(circle at 12% 0%, rgba(14, 165, 233, .16), transparent 32%),
-        radial-gradient(circle at 86% 14%, rgba(20, 184, 166, .13), transparent 31%),
-        linear-gradient(135deg, #020617, #07111f 48%, #020617);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    button { font: inherit; }
-
-    .page {
-      width: 100%;
-      min-height: 100vh;
-      padding: 18px;
-    }
-
-    .topbar {
-      width: min(1520px, 100%);
-      margin: 0 auto 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-    }
-
-    .brand {
-      font-size: 25px;
-      font-weight: 950;
-      letter-spacing: -0.045em;
-      line-height: 1;
-    }
-
-    .subbrand {
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 900;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-    }
-
-    .statusWrap {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: rgba(15, 23, 42, .72);
-      color: #cbd5e1;
-      padding: 8px 11px;
-      font-size: 11px;
-      font-weight: 950;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .pill.live {
-      color: #bbf7d0;
-      border-color: rgba(34, 197, 94, .38);
-      box-shadow: 0 0 28px rgba(34, 197, 94, .1);
-    }
-
-    .pill.warn {
-      color: #fecaca;
-      border-color: rgba(248, 113, 113, .38);
-    }
-
-    .warning {
-      display: none;
-      width: min(1520px, 100%);
-      margin: 0 auto 12px;
-      border: 1px solid rgba(251, 191, 36, .28);
-      background: rgba(120, 53, 15, .28);
-      color: #fde68a;
-      border-radius: 16px;
-      padding: 10px 12px;
-      font-weight: 850;
-      font-size: 13px;
-    }
-
-    .layout {
-      width: min(1520px, 100%);
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 190px minmax(0, 1fr) 350px;
-      gap: 14px;
-      align-items: stretch;
-    }
-
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      background: linear-gradient(180deg, var(--panel), var(--panel2));
-      box-shadow:
-        0 24px 70px rgba(0, 0, 0, .28),
-        inset 0 1px 0 rgba(255, 255, 255, .04);
-      overflow: hidden;
-    }
-
-    .symbolsPanel {
-      padding: 13px;
-      min-height: calc(100vh - 82px);
-    }
-
-    .panelTitle {
-      color: #e2e8f0;
-      font-size: 12px;
-      font-weight: 950;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
-
-    .symbolsList {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 7px;
-    }
-
-    .symbolBtn {
-      width: 100%;
-      cursor: pointer;
-      border: 1px solid rgba(148, 163, 184, .13);
-      background: rgba(15, 23, 42, .55);
-      color: #dbeafe;
-      border-radius: 14px;
-      padding: 9px 10px;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 900;
-      transition: transform .14s ease, border-color .14s ease, background .14s ease;
-    }
-
-    .symbolBtn:hover,
-    .symbolBtn.active {
-      transform: translateX(2px);
-      border-color: rgba(45, 212, 191, .48);
-      background: rgba(20, 184, 166, .13);
-    }
-
-    .mainPanel {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto 1fr;
-      gap: 14px;
-    }
-
-    .chartPanel {
-      padding: 12px;
-    }
-
-    .chartTop {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      padding: 0 2px 9px;
-    }
-
-    .activeName {
-      font-size: 22px;
-      font-weight: 950;
-      letter-spacing: -.04em;
-    }
-
-    .chartMeta {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 850;
-      text-align: right;
-    }
-
-    .canvasShell {
-      position: relative;
-      height: 390px;
-      border: 1px solid rgba(148, 163, 184, .12);
-      border-radius: 20px;
-      background: #020617;
-      overflow: hidden;
-    }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    .liveTradesPanel {
-      padding: 14px;
-      min-height: 248px;
-    }
-
-    .tableScroll {
-      max-height: 292px;
-      overflow: auto;
-      padding-right: 2px;
-    }
-
-    .tradeRow {
-      display: grid;
-      grid-template-columns: 1fr .75fr .9fr .9fr .9fr;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .tradeHead {
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 950;
-      letter-spacing: .11em;
-      text-transform: uppercase;
-      padding: 0 10px 7px;
-      position: sticky;
-      top: 0;
-      background: rgba(2, 6, 23, .88);
-      z-index: 2;
-    }
-
-    .tradeLine {
-      border: 1px solid rgba(148, 163, 184, .13);
-      border-radius: 14px;
-      background: rgba(15, 23, 42, .58);
-      color: #e2e8f0;
-      padding: 10px;
-      margin-bottom: 7px;
-      font-size: 12px;
-      font-weight: 850;
-    }
-
-    .tradeLine.clickable {
-      cursor: pointer;
-    }
-
-    .tradeLine.clickable:hover {
-      border-color: rgba(56, 189, 248, .36);
-      background: rgba(56, 189, 248, .08);
-    }
-
-    .sidePanel {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .metricCard {
-      padding: 17px;
-    }
-
-    .metricLabel {
-      display: block;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 950;
-      letter-spacing: .13em;
-      text-transform: uppercase;
-    }
-
-    .pnlValue {
-      display: block;
-      margin-top: 4px;
-      font-size: clamp(34px, 4vw, 46px);
-      font-weight: 950;
-      letter-spacing: -.06em;
-      color: var(--green2);
-      line-height: 1;
-    }
-
-    .pnlValue.neg { color: var(--red2); }
-
-    .tradesCounterCard {
-      padding: 17px;
-    }
-
-    .counterGrid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 11px;
-    }
-
-    .counterBox {
-      border: 1px solid rgba(148, 163, 184, .14);
-      border-radius: 18px;
-      padding: 13px 10px;
-      background: rgba(2, 6, 23, .38);
-      min-height: 92px;
-    }
-
-    .counterName {
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 950;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-    }
-
-    .counterNum {
-      display: block;
-      margin-top: 4px;
-      color: #cbd5e1;
-      font-size: 43px;
-      font-weight: 950;
-      letter-spacing: -.08em;
-      line-height: 1;
-      transition: color .4s ease, transform .4s ease;
-    }
-
-    .counterNum.pulseWin {
-      animation: winPulse 2.3s ease-out;
-    }
-
-    .counterNum.pulseLoss {
-      animation: lossPulse 2.3s ease-out;
-    }
-
-    @keyframes winPulse {
-      0% { transform: scale(1); color: #cbd5e1; text-shadow: none; }
-      12% { transform: scale(1.26); color: #00ff7f; text-shadow: 0 0 34px rgba(0,255,127,.95); }
-      40% { transform: scale(1.12); color: #34d399; text-shadow: 0 0 22px rgba(52,211,153,.62); }
-      72% { transform: scale(1.04); color: #86efac; text-shadow: 0 0 12px rgba(134,239,172,.36); }
-      100% { transform: scale(1); color: #cbd5e1; text-shadow: none; }
-    }
-
-    @keyframes lossPulse {
-      0% { transform: scale(1); color: #cbd5e1; text-shadow: none; }
-      12% { transform: scale(1.26); color: #ff1744; text-shadow: 0 0 34px rgba(255,23,68,.95); }
-      40% { transform: scale(1.12); color: #ef4444; text-shadow: 0 0 22px rgba(239,68,68,.62); }
-      72% { transform: scale(1.04); color: #fca5a5; text-shadow: 0 0 12px rgba(252,165,165,.36); }
-      100% { transform: scale(1); color: #cbd5e1; text-shadow: none; }
-    }
-
-    .focusCard {
-      padding: 17px;
-      flex: 1;
-      min-height: 150px;
-    }
-
-    .focusSymbol {
-      display: block;
-      margin-top: 4px;
-      font-size: 26px;
-      font-weight: 950;
-      letter-spacing: -.04em;
-    }
-
-    .focusSmall {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 850;
-    }
-
-    .long { color: var(--green2); }
-    .short { color: var(--red2); }
-    .profit { color: var(--green2); }
-    .loss { color: var(--red2); }
-    .flat { color: #cbd5e1; }
-
-    .empty {
-      border: 1px dashed rgba(148, 163, 184, .25);
-      border-radius: 16px;
-      color: var(--muted);
-      padding: 18px;
-      font-weight: 850;
-      font-size: 13px;
-    }
-
-    @media (max-width: 1180px) {
-      .layout {
-        grid-template-columns: 160px minmax(0, 1fr);
-      }
-      .sidePanel {
-        grid-column: 1 / -1;
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-      }
-      .symbolsPanel { min-height: auto; }
-    }
-
-    @media (max-width: 760px) {
-      .page { padding: 12px; }
-      .topbar { align-items: flex-start; flex-direction: column; }
-      .layout { grid-template-columns: 1fr; }
-      .symbolsList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .canvasShell { height: 310px; }
-      .sidePanel { grid-template-columns: 1fr; }
-      .tradeRow { grid-template-columns: 1fr .7fr .8fr; }
-      .tradeRow span:nth-child(3), .tradeRow span:nth-child(4) { display: none; }
-    }
-  </style>
+  <title>Fayt Systems | Paper Execution Command Deck</title>
+  <link rel="stylesheet" href="/fayt-investor-dashboard.css" />
+  <script defer src="/fayt-investor-dashboard.js"></script>
 </head>
 <body>
-  <div class="page">
+  <canvas id="systemBackdrop" aria-hidden="true"></canvas>
+  <div class="siteShell">
     <header class="topbar">
-      <div>
-        <div class="brand">Fayt Systems</div>
-        <div class="subbrand">Live execution display</div>
-      </div>
-      <div class="statusWrap">
-        <div class="pill" id="apiBasePill">API</div>
-        <div class="pill" id="lastFetchPill">Waiting</div>
-        <div class="pill" id="statusPill">Connecting</div>
+      <a class="brand" href="/" aria-label="Fayt Systems demo home">
+        <span class="brandMark">FS</span>
+        <span>
+          <strong>Fayt Systems</strong>
+          <small>Paper execution command deck</small>
+        </span>
+      </a>
+
+      <div class="statusRack" aria-live="polite">
+        <span class="statusPill" id="apiPill">API</span>
+        <span class="statusPill" id="pollPill">Waiting</span>
+        <span class="statusPill warn" id="statusPill">Connecting</span>
       </div>
     </header>
 
-    <div class="warning" id="warningBox"></div>
+    <main class="dashboard">
+      <section class="heroPanel">
+        <div class="heroCopy">
+          <span class="eyebrow">Live market data plus paper execution</span>
+          <h1>FAYT paper command deck</h1>
+          <p id="feedMessage">Waiting for the shadow paper feed.</p>
+        </div>
 
-    <main class="layout">
-      <aside class="panel symbolsPanel">
-        <div class="panelTitle">Active 22 Symbols</div>
-        <div class="symbolsList" id="symbolsList"></div>
-      </aside>
+        <div class="signalPanel" aria-label="Current trade pulse">
+          <span class="signalLabel">Trade pulse</span>
+          <strong id="tradePulse">Idle</strong>
+          <span id="tradePulseDetail">No recent update</span>
+        </div>
 
-      <section class="mainPanel">
-        <section class="panel chartPanel">
-          <div class="chartTop">
-            <div class="activeName" id="activeName">—</div>
-            <div class="chartMeta" id="chartMeta">2D candles · 60m</div>
-          </div>
-          <div class="canvasShell">
-            <canvas id="candleCanvas"></canvas>
-          </div>
-        </section>
-
-        <section class="panel liveTradesPanel">
-          <div class="panelTitle">Live Trades</div>
-          <div class="tradeRow tradeHead">
-            <span>Symbol</span>
-            <span>Side</span>
-            <span>Entry</span>
-            <span>Target Close</span>
-            <span>PnL</span>
-          </div>
-          <div class="tableScroll" id="liveTradesRows"></div>
-        </section>
+        <div class="telemetryStack" aria-label="Public safety state">
+          <span>Public Feed</span>
+          <strong>Read Only</strong>
+          <small>No broker controls exposed</small>
+          <span>Mode</span>
+          <strong>Paper</strong>
+          <small>Live keys stay outside the site</small>
+        </div>
       </section>
 
-      <aside class="sidePanel">
-        <section class="panel metricCard">
+      <section class="metricStrip" aria-label="Running trade totals">
+        <article class="metricTile pnlTile">
           <span class="metricLabel">Running PnL</span>
-          <strong class="pnlValue" id="runningPnl">$0.00</strong>
-        </section>
+          <strong class="metricValue" id="runningPnl">$0.00</strong>
+          <small id="pnlBreakdown">Realized $0.00 / Floating $0.00</small>
+        </article>
 
-        <section class="panel tradesCounterCard">
-          <span class="metricLabel">Trades</span>
-          <div class="counterGrid">
-            <div class="counterBox">
-              <div class="counterName">Won</div>
-              <strong class="counterNum" id="wonCount">0</strong>
+        <article class="metricTile">
+          <span class="metricLabel">Wins</span>
+          <strong class="metricValue winText" id="winsCount">0</strong>
+          <small>Closed profitable trades</small>
+        </article>
+
+        <article class="metricTile">
+          <span class="metricLabel">Losses</span>
+          <strong class="metricValue lossText" id="lossesCount">0</strong>
+          <small>Closed losing trades</small>
+        </article>
+
+        <article class="metricTile equityTile">
+          <div>
+            <span class="metricLabel">PnL tape</span>
+            <small id="equityCaption">Awaiting snapshots</small>
+          </div>
+          <canvas id="equityCanvas" aria-label="Running PnL line chart"></canvas>
+        </article>
+      </section>
+
+      <section class="workbench">
+        <article class="panel chartPanel">
+          <div class="panelHead">
+            <div>
+              <span class="eyebrow">Selected symbol</span>
+              <h2 id="activeSymbolTitle">BTC/USD</h2>
             </div>
-            <div class="counterBox">
-              <div class="counterName">Lost</div>
-              <strong class="counterNum" id="lostCount">0</strong>
+            <div class="chartStats">
+              <span id="chartMeta">60m candles</span>
+              <strong id="lastPrice">Last -</strong>
             </div>
           </div>
-        </section>
+          <div class="canvasFrame">
+            <canvas id="candleCanvas" aria-label="Live candlestick chart"></canvas>
+          </div>
+        </article>
 
-        <section class="panel focusCard">
-          <span class="metricLabel">Selected Chart</span>
-          <strong class="focusSymbol" id="focusSymbol">—</strong>
-          <small class="focusSmall" id="focusDetail">Waiting for feed</small>
-        </section>
-      </aside>
+        <article class="panel positionsPanel">
+          <div class="panelHead">
+            <div>
+              <span class="eyebrow">Open positions</span>
+              <h2 id="positionTitle">BTC/USD</h2>
+            </div>
+            <span class="countBadge" id="positionCount">0</span>
+          </div>
+          <div class="positionList" id="selectedPositions"></div>
+        </article>
+      </section>
+
+      <section class="panel ledgerPanel">
+        <div class="panelHead">
+          <div>
+            <span class="eyebrow">Trade ledger</span>
+            <h2>Entry, target, exit, PnL</h2>
+          </div>
+          <span class="countBadge" id="tradeCount">0 trades</span>
+        </div>
+
+        <div class="ledgerTable" role="table" aria-label="Shadow paper trade ledger">
+          <div class="ledgerRow ledgerHeader" role="row">
+            <span>Symbol</span>
+            <span>Side</span>
+            <span>Status</span>
+            <span>Entry</span>
+            <span>Target Exit</span>
+            <span>Exit / Mark</span>
+            <span>PnL</span>
+            <span>Result</span>
+          </div>
+          <div id="tradeLedgerBody"></div>
+        </div>
+      </section>
+
+      <section class="symbolDockPanel" aria-label="Active symbol selector">
+        <div class="dockHead">
+          <span class="eyebrow">Active 22 symbols</span>
+          <strong>Tap a symbol to load candles and positions</strong>
+        </div>
+        <div class="symbolDock" id="symbolDock"></div>
+      </section>
     </main>
   </div>
-
-  <script>
-  (() => {
-    const DEFAULT_SYMBOLS = [
-      "AAVE/USD", "ADA/USD", "ARB/USD", "ATOM/USD", "AVAX/USD", "BCH/USD",
-      "BTC/USD", "DOGE/USD", "DOT/USD", "ENA/USD", "ETH/USD", "HBAR/USD",
-      "LINK/USD", "LTC/USD", "NEAR/USD", "ONDO/USD", "PAXG/USD", "PEPE/USD",
-      "SHIB/USD", "SOL/USD", "XRP/USD", "ZEC/USD"
-    ];
-
-    const params = new URLSearchParams(window.location.search);
-    const API_BASE = params.get("api") || (
-      ["localhost", "127.0.0.1"].includes(window.location.hostname)
-        ? "http://127.0.0.1:8111"
-        : "https://demo-api.faytsystems.com"
-    );
-
-    const $ = (id) => document.getElementById(id);
-    let symbols = [...DEFAULT_SYMBOLS];
-    let activeSymbol = params.get("symbol") || "BTC/USD";
-    let userPickedSymbol = Boolean(params.get("symbol"));
-    let candles = [];
-    let openTrades = [];
-    let recentTrades = [];
-    let markers = [];
-    let firstCounterLoad = true;
-    let lastWon = 0;
-    let lastLost = 0;
-    let fetchCount = 0;
-
-    $("apiBasePill").textContent = API_BASE.replace(/^https?:\/\//, "");
-
-    function setWarning(message) {
-      const box = $("warningBox");
-      if (!message) {
-        box.style.display = "none";
-        box.textContent = "";
-        return;
-      }
-      box.style.display = "block";
-      box.textContent = message;
-    }
-
-    function setStatus(text, ok) {
-      const pill = $("statusPill");
-      pill.textContent = text;
-      pill.classList.toggle("live", Boolean(ok));
-      pill.classList.toggle("warn", !ok);
-    }
-
-    function money(value) {
-      const n = Number(value || 0);
-      const sign = n > 0 ? "+" : "";
-      return sign + "$" + n.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      });
-    }
-
-    function price(value) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
-      const n = Number(value);
-      return n.toLocaleString(undefined, {
-        minimumFractionDigits: n < 1 ? 4 : 2,
-        maximumFractionDigits: n < 1 ? 6 : 2
-      });
-    }
-
-    function pnlClass(value) {
-      const n = Number(value || 0);
-      if (n > 0) return "profit";
-      if (n < 0) return "loss";
-      return "flat";
-    }
-
-    function sideLabel(value) {
-      const s = String(value || "").toLowerCase();
-      if (s.includes("short") || s === "sell") return "Short";
-      if (s.includes("long") || s === "buy") return "Long";
-      return value || "—";
-    }
-
-    function sideClass(value) {
-      return String(value || "").toLowerCase().includes("short") ? "short" : "long";
-    }
-
-    async function getJson(path) {
-      const url = API_BASE + path;
-      const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) throw new Error(url + " returned " + response.status);
-      return await response.json();
-    }
-
-    function animateCounter(id, className) {
-      const el = $(id);
-      el.classList.remove(className);
-      void el.offsetWidth;
-      el.classList.add(className);
-      window.setTimeout(() => el.classList.remove(className), 2400);
-    }
-
-    function updateCounters(payload) {
-      let won = Number(payload.won_count || 0);
-      let lost = Number(payload.lost_count || 0);
-
-      if (!Number.isFinite(won) || !Number.isFinite(lost)) {
-        const closed = Array.isArray(payload.recent_trades) ? payload.recent_trades : [];
-        won = closed.filter((t) => String(t.status).toLowerCase() !== "open" && Number(t.pnl || 0) > 0).length;
-        lost = closed.filter((t) => String(t.status).toLowerCase() !== "open" && Number(t.pnl || 0) < 0).length;
-      }
-
-      $("wonCount").textContent = String(won);
-      $("lostCount").textContent = String(lost);
-
-      if (!firstCounterLoad) {
-        if (won > lastWon) animateCounter("wonCount", "pulseWin");
-        if (lost > lastLost) animateCounter("lostCount", "pulseLoss");
-      }
-      lastWon = won;
-      lastLost = lost;
-      firstCounterLoad = false;
-    }
-
-    function renderSymbols() {
-      const list = $("symbolsList");
-      list.innerHTML = "";
-      for (const symbol of symbols) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "symbolBtn" + (symbol === activeSymbol ? " active" : "");
-        btn.textContent = symbol;
-        btn.onclick = () => {
-          userPickedSymbol = true;
-          activeSymbol = symbol;
-          renderSymbols();
-          updateActiveLabels();
-          loadCandles().catch((err) => handleError(err));
-        };
-        list.appendChild(btn);
-      }
-    }
-
-    function updateActiveLabels() {
-      $("activeName").textContent = activeSymbol;
-      $("focusSymbol").textContent = activeSymbol;
-      const openForSymbol = openTrades.filter((t) => t.symbol === activeSymbol).length;
-      $("focusDetail").textContent = `${openForSymbol} open trades · ${candles.length || 0} candles`;
-    }
-
-    function renderTrades() {
-      const host = $("liveTradesRows");
-      host.innerHTML = "";
-
-      if (!openTrades.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "No open public trades returned right now.";
-        host.appendChild(empty);
-        return;
-      }
-
-      for (const trade of openTrades) {
-        const row = document.createElement("div");
-        row.className = "tradeRow tradeLine clickable";
-        row.onclick = () => {
-          userPickedSymbol = true;
-          activeSymbol = trade.symbol;
-          renderSymbols();
-          updateActiveLabels();
-          loadCandles().catch((err) => handleError(err));
-        };
-
-        const sym = document.createElement("span");
-        sym.textContent = trade.symbol || "—";
-        const side = document.createElement("span");
-        side.textContent = sideLabel(trade.side);
-        side.className = sideClass(trade.side);
-        const entry = document.createElement("span");
-        entry.textContent = price(trade.entry_price);
-        const target = document.createElement("span");
-        target.textContent = price(trade.target_exit_price);
-        const pnl = document.createElement("span");
-        pnl.textContent = money(trade.pnl);
-        pnl.className = pnlClass(trade.pnl);
-
-        row.append(sym, side, entry, target, pnl);
-        host.appendChild(row);
-      }
-    }
-
-    function handleError(err) {
-      console.error(err);
-      setStatus("Feed issue", false);
-      setWarning(err && err.message ? err.message : String(err));
-    }
-
-    async function loadTrades() {
-      const payload = await getJson("/demo/live-trades?limit=100");
-      if (Array.isArray(payload.allowed_symbols) && payload.allowed_symbols.length >= 1) {
-        symbols = payload.allowed_symbols;
-      }
-
-      openTrades = Array.isArray(payload.trades) ? payload.trades : [];
-      recentTrades = Array.isArray(payload.recent_trades) ? payload.recent_trades : [];
-      markers = Array.isArray(payload.markers) ? payload.markers : [];
-
-      if (!userPickedSymbol && openTrades.length && symbols.includes(openTrades[0].symbol)) {
-        activeSymbol = openTrades[0].symbol;
-      }
-      if (!symbols.includes(activeSymbol)) activeSymbol = symbols[0] || "BTC/USD";
-
-      const pnl = Number(payload.running_pnl || 0);
-      const pnlEl = $("runningPnl");
-      pnlEl.textContent = money(pnl);
-      pnlEl.classList.toggle("neg", pnl < 0);
-
-      updateCounters(payload);
-      renderSymbols();
-      renderTrades();
-      updateActiveLabels();
-      fetchCount += 1;
-      $("lastFetchPill").textContent = `Fetch ${fetchCount}`;
-    }
-
-    async function loadCandles() {
-      const path = "/demo/live-candles?symbol=" + encodeURIComponent(activeSymbol) + "&timeframe=60m&limit=96";
-      const payload = await getJson(path);
-      candles = Array.isArray(payload.candles) ? payload.candles : [];
-      $("chartMeta").textContent = `2D candles · ${candles.length} candles`;
-      updateActiveLabels();
-      drawChart();
-    }
-
-    async function tick() {
-      try {
-        setWarning("");
-        await loadTrades();
-        await loadCandles();
-        setStatus("Live", true);
-      } catch (err) {
-        handleError(err);
-      }
-    }
-
-    function drawChart() {
-      const canvas = $("candleCanvas");
-      const shell = canvas.parentElement;
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const w = Math.max(320, shell.clientWidth);
-      const h = Math.max(260, shell.clientHeight);
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      canvas.style.width = w + "px";
-      canvas.style.height = h + "px";
-
-      const ctx = canvas.getContext("2d");
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#06111f");
-      bg.addColorStop(1, "#020617");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, w, h);
-
-      if (!candles.length) {
-        ctx.fillStyle = "rgba(226,232,240,.78)";
-        ctx.font = "800 17px system-ui";
-        ctx.fillText("Waiting for candle feed", 30, 44);
-        return;
-      }
-
-      const pad = { left: 54, right: 26, top: 22, bottom: 42 };
-      const plotW = w - pad.left - pad.right;
-      const plotH = h - pad.top - pad.bottom;
-      const highs = candles.map((c) => Number(c.high));
-      const lows = candles.map((c) => Number(c.low));
-      const maxP = Math.max(...highs);
-      const minP = Math.min(...lows);
-      const span = Math.max(0.0000001, maxP - minP);
-      const y = (p) => pad.top + ((maxP - Number(p)) / span) * plotH;
-      const xAt = (i) => pad.left + (plotW / Math.max(1, candles.length - 1)) * i;
-
-      ctx.strokeStyle = "rgba(148,163,184,.12)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 5; i += 1) {
-        const yy = pad.top + (plotH / 5) * i;
-        ctx.beginPath();
-        ctx.moveTo(pad.left, yy);
-        ctx.lineTo(w - pad.right, yy);
-        ctx.stroke();
-
-        const label = maxP - (span / 5) * i;
-        ctx.fillStyle = "rgba(148,163,184,.62)";
-        ctx.font = "750 10px system-ui";
-        ctx.fillText(price(label), 8, yy + 3);
-      }
-
-      const gap = plotW / Math.max(1, candles.length);
-      const bodyW = Math.max(3, Math.min(10, gap * 0.58));
-
-      candles.forEach((c, i) => {
-        const x = xAt(i);
-        const open = Number(c.open);
-        const close = Number(c.close);
-        const high = Number(c.high);
-        const low = Number(c.low);
-        const up = close >= open;
-        const color = up ? "#2dd4bf" : "#fb7185";
-        const bodyColor = up ? "rgba(45,212,191,.92)" : "rgba(251,113,133,.92)";
-        const yo = y(open);
-        const yc = y(close);
-        const yh = y(high);
-        const yl = y(low);
-        const top = Math.min(yo, yc);
-        const bottom = Math.max(yo, yc);
-
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.moveTo(x, yh);
-        ctx.lineTo(x, yl);
-        ctx.stroke();
-
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(x - bodyW / 2, top, bodyW, Math.max(2, bottom - top));
-      });
-
-      const firstTime = new Date(candles[0].ts || candles[0].time || 0).getTime();
-      const lastTime = new Date(candles[candles.length - 1].ts || candles[candles.length - 1].time || 0).getTime();
-      const timeSpan = Math.max(1, lastTime - firstTime);
-      const chartMarkers = markers.filter((m) => m.symbol === activeSymbol);
-
-      chartMarkers.forEach((marker) => {
-        const mt = new Date(marker.ts || "").getTime();
-        let mx = w - pad.right - 12;
-        if (!Number.isNaN(mt)) {
-          mx = pad.left + ((mt - firstTime) / timeSpan) * plotW;
-          mx = Math.max(pad.left, Math.min(w - pad.right, mx));
-        }
-        const my = y(Number(marker.price));
-        const kind = String(marker.kind || "entry").toLowerCase();
-        const isEntry = kind === "entry";
-
-        ctx.save();
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = isEntry ? "rgba(34,197,94,.85)" : "rgba(245,158,11,.85)";
-        ctx.fillStyle = isEntry ? "#22c55e" : "#f59e0b";
-        if (isEntry) {
-          ctx.beginPath();
-          ctx.arc(mx, my, 7, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.fillRect(mx - 7, my - 7, 14, 14);
-        }
-        ctx.restore();
-
-        ctx.fillStyle = "rgba(241,245,249,.86)";
-        ctx.font = "850 10px system-ui";
-        ctx.fillText(isEntry ? "ENTRY" : "EXIT", mx + 10, my - 9);
-      });
-
-      const last = candles[candles.length - 1];
-      ctx.fillStyle = "rgba(226,232,240,.76)";
-      ctx.font = "850 11px system-ui";
-      ctx.fillText(activeSymbol, pad.left, h - 16);
-      ctx.fillText("Last " + price(last.close), Math.max(pad.left, w - 126), h - 16);
-    }
-
-    renderSymbols();
-    updateActiveLabels();
-    window.addEventListener("resize", drawChart);
-    tick();
-    window.setInterval(tick, 5000);
-  })();
-  </script>
 </body>
 </html>
